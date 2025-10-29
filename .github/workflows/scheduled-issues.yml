@@ -1,42 +1,78 @@
-name: Scheduled Incident Injects
+name: Scheduled Sequential Incident Injects
 
 on:
   schedule:
-    # Every 10 minutes (adjust as needed)
-    - cron: "*/10 * * * *"
-  workflow_dispatch:  # allows you to trigger manually too
+    # Every 1 min to test (adjust to 10 or more to run)
+    - cron: "*/1 * * * *"
+  workflow_dispatch:  # allows manual runs
 
 jobs:
-  create_issue:
+  create_sequential_issue:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Set up injects
-        id: setup
+      - name: Prepare injects file
         run: |
-          echo "Creating list of injects..."
           cat <<EOF > injects.txt
-          [ALERT] Suspicious login detected from foreign IP.
-          [ALERT] High volume of failed logins on admin account.
-          [ALERT] Endpoint AV quarantine event on CFO laptop.
-          [ALERT] Firewall dropped repeated RDP attempts from untrusted host.
-          [ALERT] Unexpected data upload to third-party file sharing site.
-          [ALERT] Privileged user access granted without approval.
-          [ALERT] M365 Defender alert: possible phishing email sent from internal account.
+          [ALERT 1] Suspicious login detected from a foreign IP (User: finance_admin).
+          [ALERT 2] Multiple failed admin logins from Host-BDP-1.
+          [ALERT 3] EDR detected ransomware-like file encryption on FileSrv-BDP-01.
+          [ALERT 4] Privileged service account used unexpectedly from Host-BDP-2.
+          [ALERT 5] Backup job failed on key file share at 04:30.
+          [ALERT 6] Unusual data transfer to unknown IP 198.51.100.45.
+          [ALERT 7] New alert: ransom note file dropped in \fileshare\public.
+          [ALERT 8] External firewall logs show repeated RDP attempts from 203.0.113.25.
+          [ALERT 9] Suspicious PowerShell command execution via Office macro.
+          [ALERT 10] System reboot detected after EDR quarantine event on Host-BDP-1.
           EOF
 
-      - name: Select a random inject
+      - name: Load last index
+        id: load_state
+        run: |
+          if [ -f .inject_state ]; then
+            index=$(cat .inject_state)
+          else
+            index=0
+          fi
+          echo "Current index: $index"
+          echo "index=$index" >> $GITHUB_OUTPUT
+
+      - name: Read inject list length
+        id: count
+        run: |
+          total=$(wc -l < injects.txt)
+          echo "total=$total" >> $GITHUB_OUTPUT
+
+      - name: Pick next inject
         id: pick
         run: |
-          inject=$(shuf -n 1 injects.txt)
+          next=$(( ${{ steps.load_state.outputs.index }} + 1 ))
+          total=${{ steps.count.outputs.total }}
+          if [ "$next" -gt "$total" ]; then
+            next=1
+          fi
+          inject=$(sed -n "${next}p" injects.txt)
+          echo "Next inject: $inject"
           echo "inject=$inject" >> $GITHUB_OUTPUT
+          echo "$next" > .inject_state
 
       - name: Create GitHub Issue
         uses: peter-evans/create-issue-from-file@v5
         with:
-          title: "Tabletop Alert - $(date +'%Y-%m-%d %H:%M')"
+          title: "Tabletop Alert #${{ steps.pick.outputs.inject }}"
           content-filepath: <(echo "${{ steps.pick.outputs.inject }}")
           labels: "Tabletop, Alert"
+
+      - name: Commit new state
+        run: |
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add .inject_state
+          git commit -m "Update inject index"
+          git push
+
