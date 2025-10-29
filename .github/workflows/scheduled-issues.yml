@@ -1,8 +1,8 @@
-name: Scheduled Sequential Incident Injects
+name: Tabletop Incident Injects
 
 on:
   schedule:
-    - cron: "*/1 * * * *"
+    - cron: "*/1 * * * *"  # Every 1 minute
   workflow_dispatch:
 
 permissions:
@@ -10,28 +10,12 @@ permissions:
   issues: write
 
 jobs:
-  create_sequential_issue:
+  create_alert:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Close previous tabletop issues
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-        run: |
-          ISSUE_NUMS=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/$REPO/issues?labels=Tabletop&state=open" | jq -r '.[].number')
-          for NUM in $ISSUE_NUMS; do
-            echo "Closing issue #$NUM"
-            curl -X PATCH \
-              -H "Authorization: Bearer $GITHUB_TOKEN" \
-              -H "Accept: application/vnd.github+json" \
-              "https://api.github.com/repos/$REPO/issues/$NUM" \
-              -d '{"state":"closed"}'
-          done
 
       - name: Read inject list
         id: read_injects
@@ -58,9 +42,11 @@ jobs:
           REPO: ${{ github.repository }}
           INJECT: ${{ steps.read_injects.outputs.inject }}
         run: |
+          # Randomized fake details
           USERS=("m.brown" "a.lee" "j.smith" "l.wilson" "t.jones" "s.khan" "c.miller")
           HOSTS=("HR-SRV01" "FIN-LAP03" "ENG-WS12" "UK-AD01" "US-MAIL02" "SG-FW01" "BR-SQL03")
           IPS=("185.36.88.54" "92.143.21.100" "10.0.12.5" "172.16.8.9" "45.77.222.13" "212.58.124.5")
+
           USER=${USERS[$RANDOM % ${#USERS[@]}]}
           HOST=${HOSTS[$RANDOM % ${#HOSTS[@]}]}
           IP=${IPS[$RANDOM % ${#IPS[@]}]}
@@ -76,4 +62,3 @@ jobs:
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -d "$BODY" \
             "https://api.github.com/repos/${REPO}/issues"
-
