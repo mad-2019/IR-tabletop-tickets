@@ -1,0 +1,6 @@
+Multiple antivirus alerts from HR laptop
+High volume of outbound SMTP traffic from finance subnet
+Suspicious PowerShell execution on AD controller
+User reported phishing email with fake M365 link
+Unusual data upload to OneDrive external folder
+Unexpected service account login outside business hours
