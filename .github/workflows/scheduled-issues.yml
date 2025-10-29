@@ -1,0 +1,42 @@
+name: Scheduled Incident Injects
+
+on:
+  schedule:
+    # Every 10 minutes (adjust as needed)
+    - cron: "*/10 * * * *"
+  workflow_dispatch:  # allows you to trigger manually too
+
+jobs:
+  create_issue:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up injects
+        id: setup
+        run: |
+          echo "Creating list of injects..."
+          cat <<EOF > injects.txt
+          [ALERT] Suspicious login detected from foreign IP.
+          [ALERT] High volume of failed logins on admin account.
+          [ALERT] Endpoint AV quarantine event on CFO laptop.
+          [ALERT] Firewall dropped repeated RDP attempts from untrusted host.
+          [ALERT] Unexpected data upload to third-party file sharing site.
+          [ALERT] Privileged user access granted without approval.
+          [ALERT] M365 Defender alert: possible phishing email sent from internal account.
+          EOF
+
+      - name: Select a random inject
+        id: pick
+        run: |
+          inject=$(shuf -n 1 injects.txt)
+          echo "inject=$inject" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Issue
+        uses: peter-evans/create-issue-from-file@v5
+        with:
+          title: "Tabletop Alert - $(date +'%Y-%m-%d %H:%M')"
+          content-filepath: <(echo "${{ steps.pick.outputs.inject }}")
+          labels: "Tabletop, Alert"
