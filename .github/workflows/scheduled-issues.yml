@@ -2,7 +2,7 @@ name: Scheduled Sequential Incident Injects
 
 on:
   schedule:
-    - cron: "*/1 * * * *"  # Every 1 minutes (just for testing, change later)
+    - cron: "*/1 * * * *"  # Every 1 minute for testing
   workflow_dispatch:
 
 permissions:
@@ -12,37 +12,60 @@ permissions:
 jobs:
   create_sequential_issue:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Read inject list
+        id: read_injects
+        run: |
+          if [ -f "injects.txt" ]; then
+            mapfile -t injects < injects.txt
+          else
+            injects=("Suspicious login from finance account"
+                     "Privileged escalation detected on file server"
+                     "Email gateway reports phishing message with attachment"
+                     "Endpoint AV quarantined suspicious file"
+                     "Azure AD conditional access bypass attempt"
+                     "Firewall rule unexpectedly changed"
+                     "Data exfiltration pattern detected in proxy logs"
+                     "MFA disabled for key administrator account"
+                     "Multiple failed logins detected from overseas IP")
+          fi
+          RANDOM_INDEX=$((RANDOM % ${#injects[@]}))
+          echo "inject=${injects[$RANDOM_INDEX]}" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Issue via API
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
+          INJECT: ${{ steps.read_injects.outputs.inject }}
         run: |
-          injects=(
-            "Suspicious login from finance account"
-            "Privileged escalation detected on file server"
-            "Email gateway reports phishing message with attachment"
-            "Endpoint AV quarantined suspicious file"
-            "Azure AD conditional access bypass attempt"
-            "Firewall rule unexpectedly changed"
-            "Data exfiltration pattern detected in proxy logs"
-            "MFA disabled for key administrator account"
-            "Multiple failed logins detected from overseas IP"
-          )
+          # Generate fake data
+          USERS=("m.brown" "a.lee" "j.smith" "l.wilson" "t.jones" "s.khan" "c.miller")
+          HOSTS=("HR-SRV01" "FIN-LAP03" "ENG-WS12" "UK-AD01" "US-MAIL02" "SG-FW01" "BR-SQL03")
+          IPS=("185.36.88.54" "92.143.21.100" "10.0.12.5" "172.16.8.9" "45.77.222.13" "212.58.124.5")
+          USER=${USERS[$RANDOM % ${#USERS[@]}]}
+          HOST=${HOSTS[$RANDOM % ${#HOSTS[@]}]}
+          IP=${IPS[$RANDOM % ${#IPS[@]}]}
+          TIMESTAMP=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          RAND=$((RANDOM % 10000))
 
-          RANDOM_INDEX=$((RANDOM % ${#injects[@]}))
-          TITLE="🚨 Tabletop Alert - $(date -u +'%Y-%m-%d %H:%M UTC')"
-          BODY="Incident Inject: ${injects[$RANDOM_INDEX]}"
+          TITLE="🚨 Tabletop Alert #$RAND - $TIMESTAMP"
+          BODY="**Incident Inject:** $INJECT
 
-          # Use GitHub API instead of gh CLI for reliability
+**Detected by:** SOC Monitoring  
+**User:** $USER  
+**Host:** $HOST  
+**Source IP:** $IP  
+**Timestamp:** $TIMESTAMP  
+
+_Please triage and respond following IR playbook._"
+
+          # Create the issue
           curl -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             https://api.github.com/repos/$REPO/issues \
             -d "{\"title\":\"$TITLE\",\"body\":\"$BODY\",\"labels\":[\"Tabletop\",\"Alert\"]}"
-
-
-
