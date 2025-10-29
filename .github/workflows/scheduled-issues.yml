@@ -2,7 +2,7 @@ name: Scheduled Sequential Incident Injects
 
 on:
   schedule:
-    - cron: "*/1 * * * *"  # Every 1 minute for testing
+    - cron: "*/1 * * * *" # Every 1 minute for testing
   workflow_dispatch:
 
 permissions:
@@ -24,7 +24,7 @@ jobs:
             mapfile -t injects < injects.txt
           else
             injects=("Suspicious login from finance account"
-                     "Privileged escalation detected on file server"
+                     "Privilege escalation detected on file server"
                      "Email gateway reports phishing message with attachment"
                      "Endpoint AV quarantined suspicious file"
                      "Azure AD conditional access bypass attempt"
@@ -52,20 +52,23 @@ jobs:
           TIMESTAMP=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
           RAND=$((RANDOM % 10000))
 
-          TITLE="🚨 Tabletop Alert #$RAND - $TIMESTAMP"
-          BODY="**Incident Inject:** $INJECT
+          TITLE="🚨 Tabletop Alert #${RAND} - ${TIMESTAMP}"
+          BODY=$(cat <<EOF
+**Incident Inject:** ${INJECT}
 
 **Detected by:** SOC Monitoring  
-**User:** $USER  
-**Host:** $HOST  
-**Source IP:** $IP  
-**Timestamp:** $TIMESTAMP  
+**User:** ${USER}  
+**Host:** ${HOST}  
+**Source IP:** ${IP}  
+**Timestamp:** ${TIMESTAMP}  
 
-_Please triage and respond following IR playbook._"
+_Please triage and respond following IR playbook._
+EOF
+)
 
           # Create the issue
           curl -X POST \
             -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer $GITHUB_TOKEN" \
-            https://api.github.com/repos/$REPO/issues \
-            -d "{\"title\":\"$TITLE\",\"body\":\"$BODY\",\"labels\":[\"Tabletop\",\"Alert\"]}"
+            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+            "https://api.github.com/repos/${REPO}/issues" \
+            -d "{\"title\": \"${TITLE}\", \"body\": \"${BODY}\", \"labels\": [\"Tabletop\", \"Alert\"]}"
