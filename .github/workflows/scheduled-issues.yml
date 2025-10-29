@@ -2,7 +2,7 @@ name: Scheduled Sequential Incident Injects
 
 on:
   schedule:
-    - cron: "*/1 * * * *" # Every 1 minute for testing
+    - cron: "*/1 * * * *"
   workflow_dispatch:
 
 permissions:
@@ -12,10 +12,26 @@ permissions:
 jobs:
   create_sequential_issue:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Close previous tabletop issues
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          ISSUE_NUMS=$(curl -s -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/repos/$REPO/issues?labels=Tabletop&state=open" | jq -r '.[].number')
+          for NUM in $ISSUE_NUMS; do
+            echo "Closing issue #$NUM"
+            curl -X PATCH \
+              -H "Authorization: Bearer $GITHUB_TOKEN" \
+              -H "Accept: application/vnd.github+json" \
+              "https://api.github.com/repos/$REPO/issues/$NUM" \
+              -d '{"state":"closed"}'
+          done
 
       - name: Read inject list
         id: read_injects
@@ -48,17 +64,16 @@ jobs:
           USER=${USERS[$RANDOM % ${#USERS[@]}]}
           HOST=${HOSTS[$RANDOM % ${#HOSTS[@]}]}
           IP=${IPS[$RANDOM % ${#IPS[@]}]}
-          TIMESTAMP=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          TIMESTAMP=$(date -u +'%Y-%m-%d %H:%M:%S.%N UTC')
           RAND=$((RANDOM % 10000))
 
           TITLE="🚨 Tabletop Alert #${RAND} - ${TIMESTAMP}"
 
-          # Escape newlines for JSON safely
           BODY="{\"title\":\"${TITLE}\",\"body\":\"**Incident Inject:** ${INJECT}\n\n**Detected by:** SOC Monitoring\n**User:** ${USER}\n**Host:** ${HOST}\n**Source IP:** ${IP}\n**Timestamp:** ${TIMESTAMP}\n\n_Please triage and respond following IR playbook._\",\"labels\":[\"Tabletop\",\"Alert\"]}"
 
-          # Post to GitHub
           curl -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -d "$BODY" \
             "https://api.github.com/repos/${REPO}/issues"
+
