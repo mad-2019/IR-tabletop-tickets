@@ -2,9 +2,12 @@ name: Scheduled Sequential Incident Injects
 
 on:
   schedule:
-    # Every 1 min to test (adjust to 10 or more to run)
-    - cron: "*/1 * * * *"
-  workflow_dispatch:  # allows manual runs
+    - cron: "*/10 * * * *"  # Every 10 minutes
+  workflow_dispatch:  # Allow manual runs
+
+permissions:
+  contents: read
+  issues: write
 
 jobs:
   create_sequential_issue:
@@ -13,66 +16,36 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Prepare injects file
+      - name: Set up GitHub CLI
         run: |
-          cat <<EOF > injects.txt
-          [ALERT 1] Suspicious login detected from a foreign IP (User: finance_admin).
-          [ALERT 2] Multiple failed admin logins from Host-BDP-1.
-          [ALERT 3] EDR detected ransomware-like file encryption on FileSrv-BDP-01.
-          [ALERT 4] Privileged service account used unexpectedly from Host-BDP-2.
-          [ALERT 5] Backup job failed on key file share at 04:30.
-          [ALERT 6] Unusual data transfer to unknown IP 198.51.100.45.
-          [ALERT 7] New alert: ransom note file dropped in \fileshare\public.
-          [ALERT 8] External firewall logs show repeated RDP attempts from 203.0.113.25.
-          [ALERT 9] Suspicious PowerShell command execution via Office macro.
-          [ALERT 10] System reboot detected after EDR quarantine event on Host-BDP-1.
-          EOF
+          sudo apt-get update
+          sudo apt-get install -y gh
+          echo "${{ secrets.GITHUB_TOKEN }}" | gh auth login --with-token
 
-      - name: Load last index
-        id: load_state
-        run: |
-          if [ -f .inject_state ]; then
-            index=$(cat .inject_state)
-          else
-            index=0
-          fi
-          echo "Current index: $index"
-          echo "index=$index" >> $GITHUB_OUTPUT
-
-      - name: Read inject list length
-        id: count
-        run: |
-          total=$(wc -l < injects.txt)
-          echo "total=$total" >> $GITHUB_OUTPUT
-
-      - name: Pick next inject
+      - name: Pick a random tabletop inject
         id: pick
         run: |
-          next=$(( ${{ steps.load_state.outputs.index }} + 1 ))
-          total=${{ steps.count.outputs.total }}
-          if [ "$next" -gt "$total" ]; then
-            next=1
-          fi
-          inject=$(sed -n "${next}p" injects.txt)
-          echo "Next inject: $inject"
-          echo "inject=$inject" >> $GITHUB_OUTPUT
-          echo "$next" > .inject_state
+          injects=("Suspicious login from finance account"
+                   "Privileged escalation detected on file server"
+                   "Email gateway reports phishing message with attachment"
+                   "Endpoint AV quarantined suspicious file"
+                   "Azure AD conditional access bypass attempt"
+                   "Firewall rule unexpectedly changed"
+                   "Data exfiltration pattern detected in proxy logs"
+                   "MFA disabled for key administrator account"
+                   "Multiple failed logins detected from overseas IP")
+          RANDOM_INDEX=$((RANDOM % ${#injects[@]}))
+          echo "inject=${injects[$RANDOM_INDEX]}" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Issue
-        uses: peter-evans/create-issue-from-file@v5
-        with:
-          title: "Tabletop Alert #${{ steps.pick.outputs.inject }}"
-          content-filepath: <(echo "${{ steps.pick.outputs.inject }}")
-          labels: "Tabletop, Alert"
-
-      - name: Commit new state
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add .inject_state
-          git commit -m "Update inject index"
-          git push
+          gh issue create \
+            --repo "${{ github.repository }}" \
+            --title "🚨 Tabletop Alert - $(date +'%Y-%m-%d %H:%M UTC')" \
+            --body "Incident Inject: ${{ steps.pick.outputs.inject }}" \
+            --label "Tabletop,Alert"
+
 
