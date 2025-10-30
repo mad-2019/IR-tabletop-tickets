@@ -2,7 +2,7 @@ name: Tabletop Incident Injects
 
 on:
   schedule:
-    - cron: "*/5 * * * *"  # Every 6 minutes as I believe 6 is the minimum for my free account.
+    - cron: "*/6 * * * *"  # Every 6 minutes as I believe 6 is the minimum for my free account.
   workflow_dispatch: # Allow manual enabling
 
 permissions:
