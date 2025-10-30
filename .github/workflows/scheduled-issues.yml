@@ -2,8 +2,8 @@ name: Tabletop Incident Injects
 
 on:
   schedule:
-    - cron: "*/5 * * * *"  # Every 5 minutes is the minimum for free accounts such as mine.
-  workflow_dispatch:
+    - cron: "*/5 * * * *"  # Every 6 minutes as I believe 6 is the minimum for my free account.
+  workflow_dispatch: # Allow manual enabling
 
 permissions:
   contents: read
@@ -19,19 +19,21 @@ jobs:
 
       - name: Read inject list
         id: read_injects
+        # if injects.txt is present on workflows folder, then will read injects from it (preferred)
+        # if not, will read the example injects after else. Modify as required.
         run: |
           if [ -f "injects.txt" ]; then
             mapfile -t injects < injects.txt
           else
-            injects=("Suspicious login from finance account"
-                     "Privilege escalation detected on file server"
-                     "Email gateway reports phishing message with attachment"
-                     "Endpoint AV quarantined suspicious file"
-                     "Azure AD conditional access bypass attempt"
+            injects=("Suspicious login from admin account"
+                     "Privilege escalation detected on web server"
+                     "Email gateway reports phishing with attachment"
+                     "Crowdstrike Falcon quarantined suspicious file"
+                     "Azure AD conditional access bypass was attempted"
                      "Firewall rule unexpectedly changed"
                      "Data exfiltration pattern detected in proxy logs"
-                     "MFA disabled for key administrator account"
-                     "Multiple failed logins detected from overseas IP")
+                     "MFA disabled by administrator account"
+                     "Multiple failed logins detected from high risk country IP")
           fi
           RANDOM_INDEX=$((RANDOM % ${#injects[@]}))
           echo "inject=${injects[$RANDOM_INDEX]}" >> $GITHUB_OUTPUT
@@ -43,8 +45,8 @@ jobs:
           INJECT: ${{ steps.read_injects.outputs.inject }}
         run: |
           # Randomized fake details
-          USERS=("m.brown" "a.lee" "j.smith" "l.wilson" "t.jones" "s.khan" "c.miller")
-          HOSTS=("HR-SRV01" "FIN-LAP03" "ENG-WS12" "UK-AD01" "US-MAIL02" "SG-FW01" "BR-SQL03")
+          USERS=("A.Arkin" "A.Jolie" "B.Pitt" "C.Theron" "D.Washington" "E.Wood" "H.Ford" "I.Elba" "J.Aniston" "J.Lawrence" "K.Reeves" "L.DiCaprio" "M.Robbie" "N.Portman" "O.Wilson" "P.Stewart" "Q.Tarantino" "R.Gosling" "S.L.Jackson" "W.Ferrell")
+          HOSTS=("BDP-SRV01" "TMX-LAP03" "TMSR-WS12" "TMCSE-AD01" "ADS-MAIL02" "TGMT-FW01" "TMCS-SQL03")
           IPS=("185.36.88.54" "92.143.21.100" "10.0.12.5" "172.16.8.9" "45.77.222.13" "212.58.124.5")
 
           USER=${USERS[$RANDOM % ${#USERS[@]}]}
@@ -53,9 +55,9 @@ jobs:
           TIMESTAMP=$(date -u +'%Y-%m-%d %H:%M:%S.%N UTC')
           RAND=$((RANDOM % 10000))
 
-          TITLE="🚨 Tabletop Alert #${RAND} - ${TIMESTAMP}"
+          TITLE="🚨 Security Alert #${RAND} - ${TIMESTAMP}"
 
-          BODY="{\"title\":\"${TITLE}\",\"body\":\"**Incident Inject:** ${INJECT}\n\n**Detected by:** SOC Monitoring\n**User:** ${USER}\n**Host:** ${HOST}\n**Source IP:** ${IP}\n**Timestamp:** ${TIMESTAMP}\n\n_Please triage and respond following IR playbook._\",\"labels\":[\"Tabletop\",\"Alert\"]}"
+          BODY="{\"title\":\"${TITLE}\",\"body\":\"**Incident:** ${INJECT}\n\n**Detected by:** SOC Monitoring\n**User:** ${USER}\n**Host:** ${HOST}\n**Source IP:** ${IP}\n**Timestamp:** ${TIMESTAMP}\n\n_Please triage and respond following IR playbook._\",\"labels\":[\"Tabletop\",\"Alert\"]}"
 
           curl -X POST \
             -H "Accept: application/vnd.github+json" \
