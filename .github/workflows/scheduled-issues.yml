@@ -2,11 +2,11 @@ name: Tabletop Incident Injects
 
 on:
   schedule:
-    - cron: "*/6 * * * *"  # Every 6 minutes
-  workflow_dispatch: # Allow manual enabling
+    - cron: "*/6 * * * *"
+  workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: write        # ✅ give push permission
   issues: write
 
 jobs:
@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true   # ✅ keep push credentials
 
       - name: Initialize or read current index
         id: index
@@ -81,11 +83,17 @@ jobs:
             "https://api.github.com/repos/${REPO}/issues"
 
       - name: Increment index
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           INDEX_FILE=".github/workflows/current_index.txt"
           INDEX=$(cat "$INDEX_FILE")
           NEXT=$((INDEX + 1))
           echo "$NEXT" > "$INDEX_FILE"
+
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
           git add "$INDEX_FILE"
           git commit -m "Increment inject index to $NEXT" || echo "No changes"
           git push
+
