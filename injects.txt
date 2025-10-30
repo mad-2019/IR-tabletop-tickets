@@ -1,6 +1,7 @@
-Multiple antivirus alerts from HR laptop
-High volume of outbound SMTP traffic from finance subnet
-Suspicious PowerShell execution on AD controller
-User reported phishing email with fake M365 link
-Unusual data upload to OneDrive external folder
-Unexpected service account login outside business hours
+Malicious sign-in from external unknown IP raised by Defender XDR.
+User compromised via session cookie hijack, raised by Defender XDR.
+Inv: User clicked on a phishing email link. Link to domain included on the phising email (newdomainnotflagged.com) wasn't flagged by Secure Email Gateway. 
+Inv: This link redirected to another domain dermatologyconsutants.com which is asking for a CAPTCHA.
+Inv: After Captcha was resolved by a human, there's a new redirection to a OWA Login Page with URL: 998Rth-DJff.suspdomain.com/__//0wuueruj11 
+Inv: Results of HMTL code of OWA login analysis: Images encoded in Base64. Also, when trying a direct access to dermatologyconsutants.com or the fake OWA link, ther's a redirecton to example.com.
+Inv: GC with E3 licence (adquired before 2019). Checked: UAL is not enabled.
