@@ -2,11 +2,11 @@ name: Tabletop Incident Injects
 
 on:
   schedule:
-    - cron: "*/6 * * * *"  # Every 6 minutes as I believe 6 is the minimum for my free account.
+    - cron: "*/6 * * * *"  # Every 6 minutes
   workflow_dispatch: # Allow manual enabling
 
 permissions:
-  contents: read
+  contents: write
   issues: write
 
 jobs:
@@ -17,10 +17,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      - name: Initialize or read current index
+        id: index
+        run: |
+          INDEX_FILE=".github/workflows/current_index.txt"
+          if [ ! -f "$INDEX_FILE" ]; then
+            echo "1" > "$INDEX_FILE"
+          fi
+          INDEX=$(cat "$INDEX_FILE")
+          echo "Current index: $INDEX"
+          echo "index=$INDEX" >> $GITHUB_OUTPUT
+
       - name: Read inject list
         id: read_injects
-        # if injects.txt is present on workflows folder, then will read injects from it (preferred)
-        # if not, will read the example injects after else. Modify as required.
         run: |
           if [ -f "injects.txt" ]; then
             mapfile -t injects < injects.txt
@@ -35,16 +44,24 @@ jobs:
                      "MFA disabled by administrator account"
                      "Multiple failed logins detected from high risk country IP")
           fi
-          RANDOM_INDEX=$((RANDOM % ${#injects[@]}))
-          echo "inject=${injects[$RANDOM_INDEX]}" >> $GITHUB_OUTPUT
+
+          INDEX=${{ steps.index.outputs.index }}
+          COUNT=${#injects[@]}
+          if [ "$INDEX" -gt "$COUNT" ]; then
+            echo "No more injects left (reached $INDEX / $COUNT)"
+            exit 0
+          fi
+
+          inject="${injects[$((INDEX-1))]}"
+          echo "inject=$inject" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Issue via API
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           INJECT: ${{ steps.read_injects.outputs.inject }}
+          INDEX: ${{ steps.index.outputs.index }}
         run: |
-          # Randomized fake details
           USERS=("A.Arkin" "A.Jolie" "B.Pitt" "C.Theron" "D.Washington" "E.Wood" "H.Ford" "I.Elba" "J.Aniston" "J.Lawrence" "K.Reeves" "L.DiCaprio" "M.Robbie" "N.Portman" "O.Wilson" "P.Stewart" "Q.Tarantino" "R.Gosling" "S.L.Jackson" "W.Ferrell")
           HOSTS=("BDP-SRV01" "TMX-LAP03" "TMSR-WS12" "TMCSE-AD01" "ADS-MAIL02" "TGMT-FW01" "TMCS-SQL03")
           IPS=("185.36.88.54" "92.143.21.100" "10.0.12.5" "172.16.8.9" "45.77.222.13" "212.58.124.5")
@@ -52,11 +69,9 @@ jobs:
           USER=${USERS[$RANDOM % ${#USERS[@]}]}
           HOST=${HOSTS[$RANDOM % ${#HOSTS[@]}]}
           IP=${IPS[$RANDOM % ${#IPS[@]}]}
-          TIMESTAMP=$(date -u +'%Y-%m-%d %H:%M:%S.%N UTC')
-          RAND=$((RANDOM % 10000))
+          TIMESTAMP=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
 
-          TITLE="🚨 Security Alert #${RAND} - ${TIMESTAMP}"
-
+          TITLE="🚨 Security Alert #${INDEX} - ${TIMESTAMP}"
           BODY="{\"title\":\"${TITLE}\",\"body\":\"**Incident:** ${INJECT}\n\n**Detected by:** SOC Monitoring\n**User:** ${USER}\n**Host:** ${HOST}\n**Source IP:** ${IP}\n**Timestamp:** ${TIMESTAMP}\n\n_Please triage and respond following IR playbook._\",\"labels\":[\"Tabletop\",\"Alert\"]}"
 
           curl -X POST \
@@ -64,3 +79,13 @@ jobs:
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -d "$BODY" \
             "https://api.github.com/repos/${REPO}/issues"
+
+      - name: Increment index
+        run: |
+          INDEX_FILE=".github/workflows/current_index.txt"
+          INDEX=$(cat "$INDEX_FILE")
+          NEXT=$((INDEX + 1))
+          echo "$NEXT" > "$INDEX_FILE"
+          git add "$INDEX_FILE"
+          git commit -m "Increment inject index to $NEXT" || echo "No changes"
+          git push
