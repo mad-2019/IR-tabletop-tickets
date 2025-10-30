@@ -2,11 +2,11 @@ name: Tabletop Incident Injects
 
 on:
   schedule:
-    - cron: "*/6 * * * *"
-  workflow_dispatch:
+    - cron: "*/6 * * * *"  # Every 6 minutes (minimum for free accounts)
+  workflow_dispatch: # Allow manual trigger
 
 permissions:
-  contents: write        # ✅ give push permission
+  contents: write   # ✅ Needed to commit index file
   issues: write
 
 jobs:
@@ -17,18 +17,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          persist-credentials: true   # ✅ keep push credentials
-
-      - name: Initialize or read current index
-        id: index
-        run: |
-          INDEX_FILE=".github/workflows/current_index.txt"
-          if [ ! -f "$INDEX_FILE" ]; then
-            echo "1" > "$INDEX_FILE"
-          fi
-          INDEX=$(cat "$INDEX_FILE")
-          echo "Current index: $INDEX"
-          echo "index=$INDEX" >> $GITHUB_OUTPUT
+          persist-credentials: true  # ✅ Needed to push commits
+          fetch-depth: 0
 
       - name: Read inject list
         id: read_injects
@@ -47,22 +37,27 @@ jobs:
                      "Multiple failed logins detected from high risk country IP")
           fi
 
-          INDEX=${{ steps.index.outputs.index }}
-          COUNT=${#injects[@]}
-          if [ "$INDEX" -gt "$COUNT" ]; then
-            echo "No more injects left (reached $INDEX / $COUNT)"
-            exit 0
+          INDEX_FILE="current_index.txt"  # Store index in repo root
+          if [ ! -f "$INDEX_FILE" ]; then
+            echo 0 > "$INDEX_FILE"
           fi
 
-          inject="${injects[$((INDEX-1))]}"
-          echo "inject=$inject" >> $GITHUB_OUTPUT
+          INDEX=$(cat "$INDEX_FILE")
+
+          # Wrap around if end of inject list reached
+          if [ $INDEX -ge ${#injects[@]} ]; then
+            INDEX=0
+          fi
+
+          INJECT="${injects[$INDEX]}"
+          echo "inject=$INJECT" >> $GITHUB_OUTPUT
+          echo "index=$INDEX" >> $GITHUB_OUTPUT
 
       - name: Create GitHub Issue via API
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           INJECT: ${{ steps.read_injects.outputs.inject }}
-          INDEX: ${{ steps.index.outputs.index }}
         run: |
           USERS=("A.Arkin" "A.Jolie" "B.Pitt" "C.Theron" "D.Washington" "E.Wood" "H.Ford" "I.Elba" "J.Aniston" "J.Lawrence" "K.Reeves" "L.DiCaprio" "M.Robbie" "N.Portman" "O.Wilson" "P.Stewart" "Q.Tarantino" "R.Gosling" "S.L.Jackson" "W.Ferrell")
           HOSTS=("BDP-SRV01" "TMX-LAP03" "TMSR-WS12" "TMCSE-AD01" "ADS-MAIL02" "TGMT-FW01" "TMCS-SQL03")
@@ -72,28 +67,39 @@ jobs:
           HOST=${HOSTS[$RANDOM % ${#HOSTS[@]}]}
           IP=${IPS[$RANDOM % ${#IPS[@]}]}
           TIMESTAMP=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          RAND=$((RANDOM % 10000))
 
-          TITLE="🚨 Security Alert #${INDEX} - ${TIMESTAMP}"
+          TITLE="🚨 Security Alert #${RAND} - ${TIMESTAMP}"
           BODY="{\"title\":\"${TITLE}\",\"body\":\"**Incident:** ${INJECT}\n\n**Detected by:** SOC Monitoring\n**User:** ${USER}\n**Host:** ${HOST}\n**Source IP:** ${IP}\n**Timestamp:** ${TIMESTAMP}\n\n_Please triage and respond following IR playbook._\",\"labels\":[\"Tabletop\",\"Alert\"]}"
 
-          curl -X POST \
+          curl -s -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -d "$BODY" \
             "https://api.github.com/repos/${REPO}/issues"
 
-      - name: Increment index
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Increment Index
         run: |
-          INDEX_FILE=".github/workflows/current_index.txt"
+          INDEX_FILE="current_index.txt"
+          if [ ! -f "$INDEX_FILE" ]; then
+            echo 0 > "$INDEX_FILE"
+          fi
+
           INDEX=$(cat "$INDEX_FILE")
-          NEXT=$((INDEX + 1))
-          echo "$NEXT" > "$INDEX_FILE"
+          NEXT_INDEX=$((INDEX + 1))
+
+          # Reset automatically if beyond last inject
+          TOTAL_INJECTS=$(wc -l < injects.txt 2>/dev/null || echo 9)
+          if [ $NEXT_INDEX -ge $TOTAL_INJECTS ]; then
+            NEXT_INDEX=0
+          fi
+
+          echo $NEXT_INDEX > "$INDEX_FILE"
+          echo "Updated inject index to $NEXT_INDEX"
 
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add "$INDEX_FILE"
-          git commit -m "Increment inject index to $NEXT" || echo "No changes"
+          git commit -m "Increment inject index to $NEXT_INDEX" || echo "No changes to commit"
           git push
 
