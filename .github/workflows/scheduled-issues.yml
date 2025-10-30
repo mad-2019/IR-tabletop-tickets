@@ -2,11 +2,11 @@ name: Tabletop Incident Injects
 
 on:
   schedule:
-    - cron: "*/6 * * * *"  # Every 6 minutes (minimum for free accounts)
+    - cron: "*/5 * * * *"  # Every 5 minutes (minimum for free accounts)
   workflow_dispatch: # Allow manual trigger
 
 permissions:
-  contents: write   # ✅ Needed to commit index file
+  contents: write   # Needed to commit index file
   issues: write
 
 jobs:
@@ -17,7 +17,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          persist-credentials: true  # ✅ Needed to push commits
+          persist-credentials: true  # Needed to push commits
           fetch-depth: 0
 
       - name: Read inject list
