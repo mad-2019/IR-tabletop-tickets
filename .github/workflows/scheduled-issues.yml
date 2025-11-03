@@ -3,7 +3,16 @@ name: Tabletop Incident Injects
 on:
   schedule:
     - cron: "*/6 * * * *"  # Every 6 minutes
-  workflow_dispatch: # Allow manual triggering
+  workflow_dispatch:
+    inputs:
+      reset:
+        description: "Reset to a new random inject file"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
 
 permissions:
   contents: write
@@ -14,10 +23,17 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repository (full history)
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0   # <-- FIX: allows reading latest commits from previous runs
+
+      - name: Pull latest commits
+        run: |
+          git fetch origin main
+          git checkout main
+          git pull origin main
 
       - name: Select or reuse inject file
         id: select_inject_file
@@ -26,23 +42,24 @@ jobs:
           INDEX_FILE=".github/current_index.txt"
           INJECT_FILES=(inject*.txt)
 
-          # If no current inject file exists, or workflow is manually triggered, or last file finished, pick a new one
           PICK_NEW=false
+          RESET_INPUT="${{ github.event.inputs.reset }}"
 
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "Manual trigger detected — will pick a random inject file."
+          # Manual reset
+          if [ "$RESET_INPUT" = "true" ]; then
             PICK_NEW=true
+            echo "Manual reset requested."
           elif [ ! -f "$CURRENT_FILE" ]; then
-            echo "No current inject file found — will pick a random one."
             PICK_NEW=true
+            echo "No current inject file found."
           elif [ -f "$INDEX_FILE" ] && [ -f "$CURRENT_FILE" ]; then
             SELECTED_FILE=$(cat "$CURRENT_FILE")
             mapfile -t injects < "$SELECTED_FILE"
             TOTAL=${#injects[@]}
             INDEX=$(cat "$INDEX_FILE" 2>/dev/null || echo 0)
             if [ "$INDEX" -ge "$TOTAL" ]; then
-              echo "Last inject file finished — picking a new random one."
               PICK_NEW=true
+              echo "Finished previous inject file, picking a new one."
             fi
           fi
 
@@ -72,7 +89,25 @@ jobs:
           fi
 
           if [ "$INDEX" -ge "$TOTAL" ]; then
-            echo "Reached end of $INJECT_FILE. Workflow will stop until next trigger."
+            echo "Reached end of inject file — posting summary issue."
+            
+            GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}"
+            REPO="${{ github.repository }}"
+            TITLE="✅ Completed Inject File: $(basename $INJECT_FILE)"
+
+            BODY="The inject file **$(basename $INJECT_FILE)** has been fully processed.\n\n**Total Injects:** $TOTAL\n\n### Injects Completed:\n"
+            for i in "${injects[@]}"; do
+              BODY="${BODY}- ${i}\n"
+            done
+
+            BODY="${BODY}\nThe next random inject file will be selected on the next manual or scheduled run."
+
+            curl -X POST \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -d "{\"title\":\"${TITLE}\",\"body\":\"${BODY}\",\"labels\":[\"Summary\"]}" \
+              "https://api.github.com/repos/${REPO}/issues"
+
             exit 0
           fi
 
@@ -87,7 +122,7 @@ jobs:
           git config user.email "actions@github.com"
           git add "$INDEX_FILE"
           git commit -m "Advance inject index to $NEXT_INDEX" || echo "No changes to commit"
-          git push || echo "No push done"
+          git push origin main || echo "No push done"
 
       - name: Create GitHub Issue via API
         if: steps.read_inject.outcome == 'success'
