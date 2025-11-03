@@ -14,14 +14,15 @@ on:
           - "true"
         default: "false"
 
-      run_mode:
-        description: "Choose how to run the injects"
-        required: false
-        type: choice
-        options:
-          - "scheduled"
-          - "manual"
-        default: "scheduled"
+# Optional feature to display how to run the injects
+#      run_mode:
+#        description: "Choose how to run the injects"
+#        required: false
+#        type: choice
+#        options:
+#         - "scheduled"
+#          - "manual"
+#       default: "scheduled"
 
 permissions:
   contents: write
