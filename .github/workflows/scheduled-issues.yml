@@ -112,7 +112,6 @@ jobs:
         run: |
           set -euo pipefail
 
-          # fake details
           USERS=("A.Arkin" "A.Jolie" "B.Pitt" "C.Theron" "D.Washington" "E.Wood" "H.Ford" "I.Elba" "J.Aniston" "J.Lawrence" "K.Reeves" "L.DiCaprio" "M.Robbie" "N.Portman" "O.Wilson" "P.Stewart" "Q.Tarantino" "R.Gosling" "S.L.Jackson" "W.Ferrell")
           HOSTS=("BDP-SRV01" "TMX-LAP03" "TMSR-WS12" "TMCSE-AD01" "ADS-MAIL02" "TGMT-FW01" "TMCS-SQL03")
           IPS=("185.36.88.54" "92.143.21.100" "10.0.12.5" "172.16.8.9" "45.77.222.13" "212.58.124.5")
@@ -125,7 +124,20 @@ jobs:
 
           TITLE="🚨 Security Alert #${RAND} - ${TIMESTAMP}"
 
-          BODY="**Inject $((INDEX+1)) from $FILE**"$'\n\n'"${INJECT}"$'\n\n**Detected by:** SOC Monitoring\n**User:** ${USER}\n**Host:** ${HOST}\n**Source IP:** ${IP}\n**Timestamp:** ${TIMESTAMP}\n\n_Please triage and respond following IR playbook._"
+          # Safe heredoc for multi-line BODY content
+          read -r -d '' BODY <<EOF
+**Inject $((INDEX+1)) from $FILE**
+
+${INJECT}
+
+**Detected by:** SOC Monitoring
+**User:** ${USER}
+**Host:** ${HOST}
+**Source IP:** ${IP}
+**Timestamp:** ${TIMESTAMP}
+
+_Please triage and respond following IR playbook._
+EOF
 
           curl -s -X POST \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
@@ -144,8 +156,8 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add current_index.txt
-          git commit -m "Increment inject index to $NEXT"
-          git push
+          git commit -m "Increment inject index to $NEXT" || true
+          git push || true
 
       - name: Check if inject finished and post summary
         run: |
@@ -158,13 +170,19 @@ jobs:
             DURATION=$(( $(date -d "$END_TIME" +%s) - $(date -d "$START_TIME" +%s) ))
             DURATION_MIN=$((DURATION / 60))
 
-            BODY="### Completed Inject File: ${FILE}"$'\n\n'
-            BODY+="**Start:** ${START_TIME}"$'\n'
-            BODY+="**End:** ${END_TIME}"$'\n'
-            BODY+="**Duration:** ${DURATION_MIN} minutes"$'\n\n'
-            BODY+="**All injects processed:**"$'\n\n'
+            # Build summary body safely using heredoc
+            read -r -d '' BODY <<EOF
+### Completed Inject File: ${FILE}
+
+**Start:** ${START_TIME}
+**End:** ${END_TIME}
+**Duration:** ${DURATION_MIN} minutes
+
+**All injects processed:**
+EOF
+
             while IFS= read -r line; do
-              BODY+="- ${line}"$'\n'
+              BODY+=$'\n'"- ${line}"
             done < "$FILE"
 
             TITLE="✅ Summary - ${FILE} completed"
@@ -177,3 +195,5 @@ jobs:
 
             # cleanup files so next run picks new random inject
             rm -f current_index.txt current_inject.txt inject_start_time.txt
+          fi
+
