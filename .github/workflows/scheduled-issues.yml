@@ -2,151 +2,130 @@ name: Tabletop Incident Injects
 
 on:
   schedule:
-    - cron: "*/6 * * * *"  # Every 6 minutes
+    - cron: "*/6 * * * *"  # every 6 minutes (GitHub minimum reliable interval)
   workflow_dispatch:
     inputs:
       reset:
-        description: "Reset to a new random inject file"
+        description: "Reset inject sequence (start new random inject file)"
         required: false
         default: "false"
-        type: choice
-        options:
-          - "false"
-          - "true"
-
-permissions:
-  contents: write
-  issues: write
 
 jobs:
-  create_alert:
+  create-inject-issue:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
 
     steps:
-      - name: Checkout repository (full history)
+      - name: Checkout repo
         uses: actions/checkout@v4
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0   # <-- FIX: allows reading latest commits from previous runs
 
-      - name: Pull latest commits
+      - name: Select or continue inject
+        id: inject
         run: |
-          git fetch origin main
-          git checkout main
-          git pull origin main
+          set -e
 
-      - name: Select or reuse inject file
-        id: select_inject_file
-        run: |
-          CURRENT_FILE=".github/current_inject.txt"
-          INDEX_FILE=".github/current_index.txt"
-          INJECT_FILES=(inject*.txt)
+          # Determine whether to reset or continue
+          RESET=${{ github.event.inputs.reset }}
+          echo "Reset flag: $RESET"
 
-          PICK_NEW=false
-          RESET_INPUT="${{ github.event.inputs.reset }}"
-
-          # Manual reset
-          if [ "$RESET_INPUT" = "true" ]; then
-            PICK_NEW=true
-            echo "Manual reset requested."
-          elif [ ! -f "$CURRENT_FILE" ]; then
-            PICK_NEW=true
-            echo "No current inject file found."
-          elif [ -f "$INDEX_FILE" ] && [ -f "$CURRENT_FILE" ]; then
-            SELECTED_FILE=$(cat "$CURRENT_FILE")
-            mapfile -t injects < "$SELECTED_FILE"
-            TOTAL=${#injects[@]}
-            INDEX=$(cat "$INDEX_FILE" 2>/dev/null || echo 0)
-            if [ "$INDEX" -ge "$TOTAL" ]; then
-              PICK_NEW=true
-              echo "Finished previous inject file, picking a new one."
-            fi
+          # Find all inject files in format inject-X.txt
+          files=(inject-*.txt)
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No inject files found!"
+            exit 1
           fi
 
-          if [ "$PICK_NEW" = true ]; then
-            RANDOM_FILE=${INJECT_FILES[$RANDOM % ${#INJECT_FILES[@]}]}
-            echo "$RANDOM_FILE" > "$CURRENT_FILE"
-            echo 0 > "$INDEX_FILE"
-            echo "Selected new inject file: $RANDOM_FILE"
+          # Handle reset logic
+          if [ "$RESET" = "true" ] || [ ! -f current_inject.txt ]; then
+            # Choose a random inject file
+            selected_file="${files[RANDOM % ${#files[@]}]}"
+            echo "$selected_file" > current_inject.txt
+            echo "Selected new inject file: $selected_file"
+            echo "0" > current_index.txt
+            date -u +"%Y-%m-%d %H:%M:%S UTC" > inject_start_time.txt
           fi
 
-          SELECTED_FILE=$(cat "$CURRENT_FILE")
-          echo "inject_file=$SELECTED_FILE" >> $GITHUB_OUTPUT
+          current_file=$(cat current_inject.txt)
+          current_index=$(cat current_index.txt 2>/dev/null || echo 0)
+          echo "Current inject: $current_file (index: $current_index)"
 
-      - name: Read and advance inject index
-        id: read_inject
-        run: |
-          INDEX_FILE=".github/current_index.txt"
-          INJECT_FILE="${{ steps.select_inject_file.outputs.inject_file }}"
-
-          mapfile -t injects < "$INJECT_FILE"
-          TOTAL=${#injects[@]}
-
-          if [ -f "$INDEX_FILE" ]; then
-            INDEX=$(cat "$INDEX_FILE")
-          else
-            INDEX=0
+          # Check file exists
+          if [ ! -f "$current_file" ]; then
+            echo "❌ Inject file $current_file missing!"
+            exit 1
           fi
 
-          if [ "$INDEX" -ge "$TOTAL" ]; then
-            echo "Reached end of inject file — posting summary issue."
-            
-            GITHUB_TOKEN="${{ secrets.GITHUB_TOKEN }}"
-            REPO="${{ github.repository }}"
-            TITLE="✅ Completed Inject File: $(basename $INJECT_FILE)"
+          # Get next line
+          total_lines=$(wc -l < "$current_file" | tr -d ' ')
+          next_index=$((current_index + 1))
 
-            BODY="The inject file **$(basename $INJECT_FILE)** has been fully processed.\n\n**Total Injects:** $TOTAL\n\n### Injects Completed:\n"
-            for i in "${injects[@]}"; do
-              BODY="${BODY}- ${i}\n"
-            done
-
-            BODY="${BODY}\nThe next random inject file will be selected on the next manual or scheduled run."
-
-            curl -X POST \
-              -H "Accept: application/vnd.github+json" \
-              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-              -d "{\"title\":\"${TITLE}\",\"body\":\"${BODY}\",\"labels\":[\"Summary\"]}" \
-              "https://api.github.com/repos/${REPO}/issues"
-
+          if [ "$next_index" -gt "$total_lines" ]; then
+            echo "complete=true" >> $GITHUB_OUTPUT
+            echo "file=$current_file" >> $GITHUB_OUTPUT
             exit 0
           fi
 
-          INJECT="${injects[$INDEX]}"
-          echo "inject=$INJECT" >> $GITHUB_OUTPUT
-          echo "Current index: $INDEX of $TOTAL"
+          line=$(sed -n "${next_index}p" "$current_file")
 
-          NEXT_INDEX=$((INDEX + 1))
-          echo "$NEXT_INDEX" > "$INDEX_FILE"
+          echo "line=$line" >> $GITHUB_OUTPUT
+          echo "index=$next_index" >> $GITHUB_OUTPUT
+          echo "file=$current_file" >> $GITHUB_OUTPUT
+          echo "complete=false" >> $GITHUB_OUTPUT
 
+      - name: Post inject issue
+        if: steps.inject.outputs.complete == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          current_file="${{ steps.inject.outputs.file }}"
+          next_index="${{ steps.inject.outputs.index }}"
+          line="${{ steps.inject.outputs.line }}"
+
+          title="🚨 [${current_file}] Inject #${next_index}"
+          body="**Inject ${next_index}:** ${line}"
+
+          gh issue create --title "$title" --body "$body"
+
+          echo "$next_index" > current_index.txt
           git config user.name "github-actions"
           git config user.email "actions@github.com"
-          git add "$INDEX_FILE"
-          git commit -m "Advance inject index to $NEXT_INDEX" || echo "No changes to commit"
-          git push origin main || echo "No push done"
+          git add current_index.txt
+          git commit -m "Progress ${current_file}: line ${next_index}" || true
+          git push
 
-      - name: Create GitHub Issue via API
-        if: steps.read_inject.outcome == 'success'
+      - name: Post summary (when inject complete)
+        if: steps.inject.outputs.complete == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          INJECT: ${{ steps.read_inject.outputs.inject }}
-          FILE_USED: ${{ steps.select_inject_file.outputs.inject_file }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          USERS=("A.Arkin" "A.Jolie" "B.Pitt" "C.Theron" "D.Washington" "E.Wood" "H.Ford" "I.Elba" "J.Aniston" "J.Lawrence" "K.Reeves" "L.DiCaprio" "M.Robbie" "N.Portman" "O.Wilson" "P.Stewart" "Q.Tarantino" "R.Gosling" "S.L.Jackson" "W.Ferrell")
-          HOSTS=("BDP-SRV01" "TMX-LAP03" "TMSR-WS12" "TMCSE-AD01" "ADS-MAIL02" "TGMT-FW01" "TMCS-SQL03")
-          IPS=("185.36.88.54" "92.143.21.100" "10.0.12.5" "172.16.8.9" "45.77.222.13" "212.58.124.5")
+          file="${{ steps.inject.outputs.file }}"
+          start_time=$(cat inject_start_time.txt)
+          end_time=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
 
-          USER=${USERS[$RANDOM % ${#USERS[@]}]}
-          HOST=${HOSTS[$RANDOM % ${#HOSTS[@]}]}
-          IP=${IPS[$RANDOM % ${#IPS[@]}]}
-          TIMESTAMP=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
+          duration=$(
+            awk -v start="$start_time" -v end="$end_time" '
+              BEGIN {
+                split(start, a, "[- :]");
+                split(end, b, "[- :]");
+                t1 = mktime(a[1]" "a[2]" "a[3]" "a[4]" "a[5]" "a[6]);
+                t2 = mktime(b[1]" "b[2]" "b[3]" "b[4]" "b[5]" "b[6]);
+                diff = int((t2 - t1) / 60);
+                print diff;
+              }'
+          )
 
-          TITLE="🚨 [$(basename $FILE_USED)] Security Alert - ${TIMESTAMP}"
+          title="Completed Inject File: ${file}"
+          body="**Inject Completed Successfully**  
+          - Start: ${start_time}  
+          - End: ${end_time}  
+          - Duration: ${duration} minutes"
 
-          BODY="{\"title\":\"${TITLE}\",\"body\":\"**Incident:** ${INJECT}\n\n**Detected by:** SOC Monitoring\n**User:** ${USER}\n**Host:** ${HOST}\n**Source IP:** ${IP}\n**Timestamp:** ${TIMESTAMP}\",\"labels\":[\"Tabletop\",\"Alert\"]}"
+          gh issue create --title "$title" --body "$body"
 
-          curl -X POST \
-            -H "Accept: application/vnd.github+json" \
-            -H "Authorization: Bearer ${GITHUB_TOKEN}" \
-            -d "$BODY" \
-            "https://api.github.com/repos/${REPO}/issues"
+          # Reset tracking files for next inject
+          rm -f current_inject.txt current_index.txt inject_start_time.txt
+
