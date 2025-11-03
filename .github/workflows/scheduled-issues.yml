@@ -1,4 +1,4 @@
-name: Tabletop Incident Injects
+name: Tabletop Incident Injects (Artifact State)
 
 on:
   schedule:
@@ -13,29 +13,28 @@ on:
         default: "true"
 
 permissions:
-  contents: write
+  contents: read
   issues: write
 
 jobs:
   injects:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download saved state (if exists)
+        uses: actions/download-artifact@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          fetch-depth: 0
+          name: inject-state
+        continue-on-error: true
 
-      - name: Configure Git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git pull --rebase origin main || true
-
-      - name: Select or continue inject file
+      - name: Select or continue inject
         id: select
         run: |
           set -euo pipefail
           RESET="${{ github.event.inputs.reset }}"
+
           CUR_INJECT_FILE="current_inject.txt"
           CUR_INDEX_FILE="current_index.txt"
           START_TIME_FILE="inject_start_time.txt"
@@ -43,7 +42,7 @@ jobs:
           shopt -s nullglob
           files=(inject-*.txt)
           if [ ${#files[@]} -eq 0 ]; then
-            echo "No inject-*.txt files present" >&2
+            echo "No inject-*.txt files found."
             exit 1
           fi
 
@@ -66,9 +65,9 @@ jobs:
             echo "$RANDOM_FILE" > "$CUR_INJECT_FILE"
             echo "0" > "$CUR_INDEX_FILE"
             date -u +'%Y-%m-%d %H:%M:%S UTC' > "$START_TIME_FILE"
-            echo "Picked new inject: $RANDOM_FILE"
+            echo "Picked new inject file: $RANDOM_FILE"
           else
-            echo "Continuing with existing inject $(cat $CUR_INJECT_FILE)"
+            echo "Continuing with existing inject: $(cat $CUR_INJECT_FILE)"
           fi
 
           FILE=$(cat "$CUR_INJECT_FILE")
@@ -76,7 +75,7 @@ jobs:
           echo "file=$FILE" >> $GITHUB_OUTPUT
           echo "index=$INDEX" >> $GITHUB_OUTPUT
 
-      - name: Post one inject as issue
+      - name: Post one inject line as issue
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -86,9 +85,10 @@ jobs:
           INDEX="${{ steps.select.outputs.index }}"
           LINE=$(sed -n "$((INDEX+1))p" "$FILE")
 
-          USERS=("A.Arkin" "B.Pitt" "C.Theron")
+          USERS=("A.Arkin" "B.Pitt" "C.Theron" "D.Washington" "E.Wood")
           HOSTS=("BDP-SRV01" "TMX-LAP03" "ADS-MAIL02")
           IPS=("185.36.88.54" "92.143.21.100" "45.77.222.13")
+
           USER=${USERS[$RANDOM % ${#USERS[@]}]}
           HOST=${HOSTS[$RANDOM % ${#HOSTS[@]}]}
           IP=${IPS[$RANDOM % ${#IPS[@]}]}
@@ -105,11 +105,8 @@ jobs:
             -d "$(jq -nc --arg t "$TITLE" --arg b "$BODY" '{title:$t, body:$b, labels:["Tabletop","Alert"]}')"
 
           echo $((INDEX+1)) > current_index.txt
-          git add current_index.txt
-          git commit -m "Advance index to $((INDEX+1)) for $FILE" || true
-          git push origin main || true
 
-      - name: If finished, post summary and cleanup
+      - name: Check if finished and post summary
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -119,7 +116,7 @@ jobs:
           INDEX=$(cat current_index.txt)
           TOTAL=$(wc -l < "$FILE" | tr -d ' ')
           if [ "$INDEX" -lt "$TOTAL" ]; then
-            echo "Not finished ($INDEX/$TOTAL)."
+            echo "Not finished yet ($INDEX / $TOTAL)"
             exit 0
           fi
 
@@ -127,7 +124,7 @@ jobs:
           END=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
           DURATION=$(( ($(date -d "$END" +%s) - $(date -d "$START" +%s)) / 60 ))
 
-          SUMMARY="### Completed Inject File: $FILE\n\n**Start:** $START\n**End:** $END\n**Duration:** $DURATION minutes\n\n**All lines:**\n"
+          SUMMARY="### Completed Inject File: $FILE\n\n**Start:** $START\n**End:** $END\n**Duration:** $DURATION minutes\n\n**All injects processed:**\n"
           while IFS= read -r line; do
             SUMMARY="${SUMMARY}\n- ${line}"
           done < "$FILE"
@@ -140,6 +137,14 @@ jobs:
             -d "$(jq -nc --arg t "$TITLE" --arg b "$SUMMARY" '{title:$t, body:$b, labels:["Tabletop","Summary"]}')"
 
           rm -f current_inject.txt current_index.txt inject_start_time.txt
-          git add -A
-          git commit -m "Cleanup after $FILE finished" || true
-          git push origin main || true
+
+      - name: Save state for next run
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: inject-state
+          path: |
+            current_inject.txt
+            current_index.txt
+            inject_start_time.txt
+          retention-days: 2
