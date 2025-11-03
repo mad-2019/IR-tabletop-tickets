@@ -126,7 +126,7 @@ jobs:
             SUMMARY="${SUMMARY}\n- ${line}"
           done < "$FILE"
 
-          TITLE="✅ Summary - $FILE completed"
+          TITLE="Summary - $FILE completed"
           curl -s -X POST \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
@@ -137,4 +137,3 @@ jobs:
           git rm -f state.json || true
           git commit -m "Reset state after finishing $FILE" || true
           git push origin main || true
-
