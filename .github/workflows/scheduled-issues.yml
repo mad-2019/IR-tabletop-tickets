@@ -2,11 +2,11 @@ name: Tabletop Incident Injects
 
 on:
   schedule:
-    - cron: "*/5 * * * *"  # Every 5 minutes (minimum for free accounts)
-  workflow_dispatch: # Allow manual trigger
+    - cron: "*/6 * * * *"  # Every 6 minutes
+  workflow_dispatch: # Allow manual triggering
 
 permissions:
-  contents: write   # Needed to commit index file
+  contents: write
   issues: write
 
 jobs:
@@ -17,47 +17,73 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          persist-credentials: true  # Needed to push commits
-          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Read inject list
-        id: read_injects
+      - name: Select or reuse inject file
+        id: select_inject_file
         run: |
-          if [ -f "injects.txt" ]; then
-            mapfile -t injects < injects.txt
+          CURRENT_FILE=".github/current_inject.txt"
+          INJECT_FILES=(inject*.txt)
+          
+          # If manual run, always pick a random inject file
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            RANDOM_FILE=${INJECT_FILES[$RANDOM % ${#INJECT_FILES[@]}]}
+            echo "$RANDOM_FILE" > "$CURRENT_FILE"
+            echo "Manually started. Selected inject file: $RANDOM_FILE"
+          fi
+          
+          # Otherwise, reuse the current inject file
+          if [ -f "$CURRENT_FILE" ]; then
+            SELECTED_FILE=$(cat "$CURRENT_FILE")
           else
-            injects=("Suspicious login from admin account"
-                     "Privilege escalation detected on web server"
-                     "Email gateway reports phishing with attachment"
-                     "Crowdstrike Falcon quarantined suspicious file"
-                     "Azure AD conditional access bypass was attempted"
-                     "Firewall rule unexpectedly changed"
-                     "Data exfiltration pattern detected in proxy logs"
-                     "MFA disabled by administrator account"
-                     "Multiple failed logins detected from high risk country IP")
+            SELECTED_FILE=${INJECT_FILES[$RANDOM % ${#INJECT_FILES[@]}]}
+            echo "$SELECTED_FILE" > "$CURRENT_FILE"
           fi
 
-          INDEX_FILE="current_index.txt"  # Store index in repo root
-          if [ ! -f "$INDEX_FILE" ]; then
-            echo 0 > "$INDEX_FILE"
-          fi
+          echo "inject_file=$SELECTED_FILE" >> $GITHUB_OUTPUT
 
-          INDEX=$(cat "$INDEX_FILE")
+      - name: Read and advance inject index
+        id: read_inject
+        run: |
+          INDEX_FILE=".github/current_index.txt"
+          INJECT_FILE="${{ steps.select_inject_file.outputs.inject_file }}"
 
-          # Wrap around if end of inject list reached
-          if [ $INDEX -ge ${#injects[@]} ]; then
+          mapfile -t injects < "$INJECT_FILE"
+          TOTAL=${#injects[@]}
+
+          if [ -f "$INDEX_FILE" ]; then
+            INDEX=$(cat "$INDEX_FILE")
+          else
             INDEX=0
+          fi
+
+          # Stop automatically if end of file reached
+          if [ "$INDEX" -ge "$TOTAL" ]; then
+            echo "Reached end of $INJECT_FILE. Workflow will stop."
+            exit 0
           fi
 
           INJECT="${injects[$INDEX]}"
           echo "inject=$INJECT" >> $GITHUB_OUTPUT
-          echo "index=$INDEX" >> $GITHUB_OUTPUT
+          echo "Current index: $INDEX of $TOTAL"
+
+          # Increment index for next run
+          NEXT_INDEX=$((INDEX + 1))
+          echo "$NEXT_INDEX" > "$INDEX_FILE"
+
+          # Commit index update silently
+          git config user.name "github-actions"
+          git config user.email "actions@github.com"
+          git add "$INDEX_FILE"
+          git commit -m "Advance inject index to $NEXT_INDEX" || echo "No changes to commit"
+          git push || echo "No push done"
 
       - name: Create GitHub Issue via API
+        if: steps.read_inject.outcome == 'success'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
-          INJECT: ${{ steps.read_injects.outputs.inject }}
+          INJECT: ${{ steps.read_inject.outputs.inject }}
         run: |
           USERS=("A.Arkin" "A.Jolie" "B.Pitt" "C.Theron" "D.Washington" "E.Wood" "H.Ford" "I.Elba" "J.Aniston" "J.Lawrence" "K.Reeves" "L.DiCaprio" "M.Robbie" "N.Portman" "O.Wilson" "P.Stewart" "Q.Tarantino" "R.Gosling" "S.L.Jackson" "W.Ferrell")
           HOSTS=("BDP-SRV01" "TMX-LAP03" "TMSR-WS12" "TMCSE-AD01" "ADS-MAIL02" "TGMT-FW01" "TMCS-SQL03")
@@ -67,39 +93,13 @@ jobs:
           HOST=${HOSTS[$RANDOM % ${#HOSTS[@]}]}
           IP=${IPS[$RANDOM % ${#IPS[@]}]}
           TIMESTAMP=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
-          RAND=$((RANDOM % 10000))
 
-          TITLE="🚨 Security Alert #${RAND} - ${TIMESTAMP}"
-          BODY="{\"title\":\"${TITLE}\",\"body\":\"**Incident:** ${INJECT}\n\n**Detected by:** SOC Monitoring\n**User:** ${USER}\n**Host:** ${HOST}\n**Source IP:** ${IP}\n**Timestamp:** ${TIMESTAMP}\n\n_Please triage and respond following IR playbook._\",\"labels\":[\"Tabletop\",\"Alert\"]}"
+          TITLE="🚨 Security Alert - ${TIMESTAMP}"
 
-          curl -s -X POST \
+          BODY="{\"title\":\"${TITLE}\",\"body\":\"**Incident:** ${INJECT}\n\n**Detected by:** SOC Monitoring\n**User:** ${USER}\n**Host:** ${HOST}\n**Source IP:** ${IP}\n**Timestamp:** ${TIMESTAMP}\",\"labels\":[\"Tabletop\",\"Alert\"]}"
+
+          curl -X POST \
             -H "Accept: application/vnd.github+json" \
             -H "Authorization: Bearer ${GITHUB_TOKEN}" \
             -d "$BODY" \
             "https://api.github.com/repos/${REPO}/issues"
-
-      - name: Increment Index
-        run: |
-          INDEX_FILE="current_index.txt"
-          if [ ! -f "$INDEX_FILE" ]; then
-            echo 0 > "$INDEX_FILE"
-          fi
-
-          INDEX=$(cat "$INDEX_FILE")
-          NEXT_INDEX=$((INDEX + 1))
-
-          # Reset automatically if beyond last inject
-          TOTAL_INJECTS=$(wc -l < injects.txt 2>/dev/null || echo 9)
-          if [ $NEXT_INDEX -ge $TOTAL_INJECTS ]; then
-            NEXT_INDEX=0
-          fi
-
-          echo $NEXT_INDEX > "$INDEX_FILE"
-          echo "Updated inject index to $NEXT_INDEX"
-
-          git config user.name "github-actions"
-          git config user.email "actions@github.com"
-          git add "$INDEX_FILE"
-          git commit -m "Increment inject index to $NEXT_INDEX" || echo "No changes to commit"
-          git push
-
