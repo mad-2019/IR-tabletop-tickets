@@ -25,10 +25,11 @@ Each inject is read line-by-line from random files (inject-1.txt, inject-2.txt, 
   - `state.json`
 
 - Example content:
+  <div>
+  <code>{"current_inject": "inject-3.txt", "index": 2}<code>
+  </div>
 
-  <code> {"current_inject": "inject-3.txt", "index": 2}<code>
-
-- _This file is committed automatically after each run_
+- _Note: This file is committed automatically after each run_
 
 ## Running the workflow
 
