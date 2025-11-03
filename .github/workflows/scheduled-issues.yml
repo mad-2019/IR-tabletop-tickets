@@ -48,7 +48,7 @@ jobs:
           if [ "$RESET" = "true" ] || [ ! -f "$STATE_FILE" ]; then
             RANDOM_FILE=${files[RANDOM % ${#files[@]}]}
             INDEX=0
-            echo "{\"current_exercise\":\"${RANDOM_FILE}\",\"index\":${INDEX}}" > "$STATE_FILE"
+            echo "{\"current_exercise\":\"${RANDOM_FILE}\",\"index\":${INDEX},\"start_time\":\"$(date -u +'%Y-%m-%d %H:%M:%S UTC')\"}" > "$STATE_FILE"
             echo "Picked new exercise: $RANDOM_FILE"
           else
             FILE=$(jq -r .current_exercise "$STATE_FILE")
@@ -57,7 +57,7 @@ jobs:
             if [ "$INDEX" -ge "$TOTAL" ]; then
               RANDOM_FILE=${files[RANDOM % ${#files[@]}]}
               INDEX=0
-              echo "{\"current_exercise\":\"${RANDOM_FILE}\",\"index\":${INDEX}}" > "$STATE_FILE"
+              echo "{\"current_exercise\":\"${RANDOM_FILE}\",\"index\":${INDEX},\"start_time\":\"$(date -u +'%Y-%m-%d %H:%M:%S UTC')\"}" > "$STATE_FILE"
               echo "Previous exercise completed, picked new: $RANDOM_FILE"
             fi
           fi
@@ -78,8 +78,8 @@ jobs:
           INDEX="${{ steps.select.outputs.index }}"
           LINE=$(sed -n "$((INDEX+1))p" "$FILE")
 
-          # Extract first 10 words for the title
-          SHORT_TITLE=$(echo "$LINE" | awk '{for(i=1;i<=10 && i<=NF;i++) printf "%s ", $i; if (NF>10) printf "..."}')
+          # Extract first 6 words for the title
+          SHORT_TITLE=$(echo "$LINE" | awk '{for(i=1;i<=6 && i<=NF;i++) printf "%s ", $i; if (NF>6) printf "..."}')
 
           USERS=("A.Arkin" "B.Pitt" "C.Theron" "D.Washington" "E.Wood")
           HOSTS=("BDP-SRV01" "TMX-LAP03" "ADS-MAIL02")
@@ -124,17 +124,10 @@ jobs:
             exit 0
           fi
 
-          # Determine start and end times for duration calculation
-          if git log --format=%H -- "$FILE" >/dev/null 2>&1; then
-            START_TIME=$(git log --grep="Picked new exercise: $FILE" --format=%ci -1 || true)
-          fi
-          # Fallback: use first commit timestamp of state.json for this file
-          if [ -z "${START_TIME:-}" ]; then
-            START_TIME=$(git log --format=%ci -- state.json | tail -1)
-          fi
+          # Calculate duration based on state.json start_time
+          START_TIME=$(jq -r .start_time state.json)
           END_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
 
-          # Calculate duration in minutes (approx)
           START_EPOCH=$(date -d "$START_TIME" +%s 2>/dev/null || echo 0)
           END_EPOCH=$(date -d "$END_TIME" +%s 2>/dev/null || echo 0)
           if [ "$START_EPOCH" -gt 0 ] && [ "$END_EPOCH" -gt 0 ]; then
