@@ -8,6 +8,10 @@ on:
       reset:
         description: "Start a new random inject? (true = new, false = continue)"
         required: true
+        type: choice
+        options:
+          - "false"
+          - "true"
         default: "true"
 
 permissions:
@@ -144,7 +148,6 @@ jobs:
           git push
 
       - name: Check if inject finished and post summary
-        if: ${{ steps.select.outputs.index == (steps.select.outputs.index) }} # placeholder
         run: |
           FILE="${{ steps.select.outputs.file }}"
           INDEX=$(cat current_index.txt)
@@ -164,7 +167,7 @@ jobs:
               BODY+="- ${line}"$'\n'
             done < "$FILE"
 
-            TITLE="Summary - ${FILE} completed"
+            TITLE="✅ Summary - ${FILE} completed"
 
             curl -s -X POST \
               -H "Authorization: Bearer $GITHUB_TOKEN" \
