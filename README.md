@@ -25,10 +25,8 @@ Each inject is read line-by-line from random files (inject-1.txt, inject-2.txt, 
   - `state.json`
 
 - Example content:
-  <div>
-  <code>{"current_inject": "inject-3.txt", "index": 2}<code>
-  </div>
 
+  - `{"current_inject": "inject-3.txt", "index": 2}`
 - _Note: This file is committed automatically after each run_
 
 ## Running the workflow
@@ -54,11 +52,10 @@ If something goes wrong or you want to restart from scratch:
 
 - Each inject line appears as a new GitHub Issue titled like:
 
-  <code>🚨 [inject-3.txt] Line 4 - 2025-11-03 11:20:33 UTC<code>
+  - `🚨 [inject-3.txt] Line 4 - 2025-11-03 11:20:33 UTC`
 
 - Includes randomized user/host/IP metadata to simulate an alert.
 
 
-_Created by Mauricio Díaz_
+_By Mauricio Díaz_
 
-_Designed for cybersecurity tabletop simulation and training_
