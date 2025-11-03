@@ -23,23 +23,37 @@ jobs:
         id: select_inject_file
         run: |
           CURRENT_FILE=".github/current_inject.txt"
+          INDEX_FILE=".github/current_index.txt"
           INJECT_FILES=(inject*.txt)
-          
-          # If manual run, always pick a random inject file
+
+          # If no current inject file exists, or workflow is manually triggered, or last file finished, pick a new one
+          PICK_NEW=false
+
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            RANDOM_FILE=${INJECT_FILES[$RANDOM % ${#INJECT_FILES[@]}]}
-            echo "$RANDOM_FILE" > "$CURRENT_FILE"
-            echo "Manually started. Selected inject file: $RANDOM_FILE"
-          fi
-          
-          # Otherwise, reuse the current inject file
-          if [ -f "$CURRENT_FILE" ]; then
+            echo "Manual trigger detected — will pick a random inject file."
+            PICK_NEW=true
+          elif [ ! -f "$CURRENT_FILE" ]; then
+            echo "No current inject file found — will pick a random one."
+            PICK_NEW=true
+          elif [ -f "$INDEX_FILE" ] && [ -f "$CURRENT_FILE" ]; then
             SELECTED_FILE=$(cat "$CURRENT_FILE")
-          else
-            SELECTED_FILE=${INJECT_FILES[$RANDOM % ${#INJECT_FILES[@]}]}
-            echo "$SELECTED_FILE" > "$CURRENT_FILE"
+            mapfile -t injects < "$SELECTED_FILE"
+            TOTAL=${#injects[@]}
+            INDEX=$(cat "$INDEX_FILE" 2>/dev/null || echo 0)
+            if [ "$INDEX" -ge "$TOTAL" ]; then
+              echo "Last inject file finished — picking a new random one."
+              PICK_NEW=true
+            fi
           fi
 
+          if [ "$PICK_NEW" = true ]; then
+            RANDOM_FILE=${INJECT_FILES[$RANDOM % ${#INJECT_FILES[@]}]}
+            echo "$RANDOM_FILE" > "$CURRENT_FILE"
+            echo 0 > "$INDEX_FILE"
+            echo "Selected new inject file: $RANDOM_FILE"
+          fi
+
+          SELECTED_FILE=$(cat "$CURRENT_FILE")
           echo "inject_file=$SELECTED_FILE" >> $GITHUB_OUTPUT
 
       - name: Read and advance inject index
@@ -57,9 +71,8 @@ jobs:
             INDEX=0
           fi
 
-          # Stop automatically if end of file reached
           if [ "$INDEX" -ge "$TOTAL" ]; then
-            echo "Reached end of $INJECT_FILE. Workflow will stop."
+            echo "Reached end of $INJECT_FILE. Workflow will stop until next trigger."
             exit 0
           fi
 
@@ -67,11 +80,9 @@ jobs:
           echo "inject=$INJECT" >> $GITHUB_OUTPUT
           echo "Current index: $INDEX of $TOTAL"
 
-          # Increment index for next run
           NEXT_INDEX=$((INDEX + 1))
           echo "$NEXT_INDEX" > "$INDEX_FILE"
 
-          # Commit index update silently
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add "$INDEX_FILE"
@@ -84,6 +95,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
           INJECT: ${{ steps.read_inject.outputs.inject }}
+          FILE_USED: ${{ steps.select_inject_file.outputs.inject_file }}
         run: |
           USERS=("A.Arkin" "A.Jolie" "B.Pitt" "C.Theron" "D.Washington" "E.Wood" "H.Ford" "I.Elba" "J.Aniston" "J.Lawrence" "K.Reeves" "L.DiCaprio" "M.Robbie" "N.Portman" "O.Wilson" "P.Stewart" "Q.Tarantino" "R.Gosling" "S.L.Jackson" "W.Ferrell")
           HOSTS=("BDP-SRV01" "TMX-LAP03" "TMSR-WS12" "TMCSE-AD01" "ADS-MAIL02" "TGMT-FW01" "TMCS-SQL03")
@@ -94,7 +106,7 @@ jobs:
           IP=${IPS[$RANDOM % ${#IPS[@]}]}
           TIMESTAMP=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
 
-          TITLE="🚨 Security Alert - ${TIMESTAMP}"
+          TITLE="🚨 [$(basename $FILE_USED)] Security Alert - ${TIMESTAMP}"
 
           BODY="{\"title\":\"${TITLE}\",\"body\":\"**Incident:** ${INJECT}\n\n**Detected by:** SOC Monitoring\n**User:** ${USER}\n**Host:** ${HOST}\n**Source IP:** ${IP}\n**Timestamp:** ${TIMESTAMP}\",\"labels\":[\"Tabletop\",\"Alert\"]}"
 
