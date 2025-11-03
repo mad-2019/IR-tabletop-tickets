@@ -1,4 +1,4 @@
-name: Tabletop Incident Injects (Artifact State)
+name: Tabletop Incident Injects
 
 on:
   schedule:
@@ -13,69 +13,62 @@ on:
         default: "true"
 
 permissions:
-  contents: read
+  contents: write
   issues: write
 
 jobs:
   injects:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Download saved state (if exists)
-        uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
         with:
-          name: inject-state
-        continue-on-error: true
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
 
-      - name: Select or continue inject
+      - name: Configure Git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git pull --rebase origin main || true
+
+      - name: Select or continue inject file
         id: select
         run: |
           set -euo pipefail
           RESET="${{ github.event.inputs.reset }}"
-
-          CUR_INJECT_FILE="current_inject.txt"
-          CUR_INDEX_FILE="current_index.txt"
-          START_TIME_FILE="inject_start_time.txt"
+          STATE_FILE="state.json"
 
           shopt -s nullglob
           files=(inject-*.txt)
           if [ ${#files[@]} -eq 0 ]; then
-            echo "No inject-*.txt files found."
+            echo "No inject-*.txt files found." >&2
             exit 1
           fi
 
-          PICK_NEW=false
-          if [ "$RESET" = "true" ]; then
-            PICK_NEW=true
-          elif [ ! -f "$CUR_INJECT_FILE" ] || [ ! -f "$CUR_INDEX_FILE" ]; then
-            PICK_NEW=true
+          if [ "$RESET" = "true" ] || [ ! -f "$STATE_FILE" ]; then
+            RANDOM_FILE=${files[RANDOM % ${#files[@]}]}
+            INDEX=0
+            echo "{\"current_inject\":\"${RANDOM_FILE}\",\"index\":${INDEX}}" > "$STATE_FILE"
+            echo "Picked new inject: $RANDOM_FILE"
           else
-            INDEX=$(cat "$CUR_INDEX_FILE")
-            CURRENT_FILE=$(cat "$CUR_INJECT_FILE")
-            TOTAL=$(wc -l < "$CURRENT_FILE" | tr -d ' ')
+            FILE=$(jq -r .current_inject "$STATE_FILE")
+            INDEX=$(jq -r .index "$STATE_FILE")
+            TOTAL=$(wc -l < "$FILE" | tr -d ' ')
             if [ "$INDEX" -ge "$TOTAL" ]; then
-              PICK_NEW=true
+              RANDOM_FILE=${files[RANDOM % ${#files[@]}]}
+              INDEX=0
+              echo "{\"current_inject\":\"${RANDOM_FILE}\",\"index\":${INDEX}}" > "$STATE_FILE"
+              echo "Previous inject completed, picked new: $RANDOM_FILE"
             fi
           fi
 
-          if [ "$PICK_NEW" = true ]; then
-            RANDOM_FILE=${files[RANDOM % ${#files[@]}]}
-            echo "$RANDOM_FILE" > "$CUR_INJECT_FILE"
-            echo "0" > "$CUR_INDEX_FILE"
-            date -u +'%Y-%m-%d %H:%M:%S UTC' > "$START_TIME_FILE"
-            echo "Picked new inject file: $RANDOM_FILE"
-          else
-            echo "Continuing with existing inject: $(cat $CUR_INJECT_FILE)"
-          fi
+          FILE=$(jq -r .current_inject "$STATE_FILE")
+          INDEX=$(jq -r .index "$STATE_FILE")
 
-          FILE=$(cat "$CUR_INJECT_FILE")
-          INDEX=$(cat "$CUR_INDEX_FILE")
           echo "file=$FILE" >> $GITHUB_OUTPUT
           echo "index=$INDEX" >> $GITHUB_OUTPUT
 
-      - name: Post one inject line as issue
+      - name: Post inject issue
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -104,47 +97,44 @@ jobs:
             "https://api.github.com/repos/${REPO}/issues" \
             -d "$(jq -nc --arg t "$TITLE" --arg b "$BODY" '{title:$t, body:$b, labels:["Tabletop","Alert"]}')"
 
-          echo $((INDEX+1)) > current_index.txt
+      - name: Update index and commit state
+        run: |
+          FILE="${{ steps.select.outputs.file }}"
+          INDEX="${{ steps.select.outputs.index }}"
+          NEXT=$((INDEX+1))
+          jq --argjson i "$NEXT" '.index=$i' state.json > tmp.json && mv tmp.json state.json
 
-      - name: Check if finished and post summary
+          git add state.json
+          git commit -m "Advance index to $NEXT for $FILE" || true
+          git push origin main || true
+
+      - name: Check if inject finished and post summary
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          set -euo pipefail
-          FILE=$(cat current_inject.txt)
-          INDEX=$(cat current_index.txt)
+          FILE=$(jq -r .current_inject state.json)
+          INDEX=$(jq -r .index state.json)
           TOTAL=$(wc -l < "$FILE" | tr -d ' ')
           if [ "$INDEX" -lt "$TOTAL" ]; then
-            echo "Not finished yet ($INDEX / $TOTAL)"
+            echo "Not finished ($INDEX / $TOTAL)"
             exit 0
           fi
 
-          START=$(cat inject_start_time.txt)
-          END=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
-          DURATION=$(( ($(date -d "$END" +%s) - $(date -d "$START" +%s)) / 60 ))
-
-          SUMMARY="### Completed Inject File: $FILE\n\n**Start:** $START\n**End:** $END\n**Duration:** $DURATION minutes\n\n**All injects processed:**\n"
+          SUMMARY="### Completed Inject File: $FILE\n\n**All injects processed:**\n"
           while IFS= read -r line; do
             SUMMARY="${SUMMARY}\n- ${line}"
           done < "$FILE"
 
-          TITLE="Summary - $FILE completed"
+          TITLE="✅ Summary - $FILE completed"
           curl -s -X POST \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${REPO}/issues" \
             -d "$(jq -nc --arg t "$TITLE" --arg b "$SUMMARY" '{title:$t, body:$b, labels:["Tabletop","Summary"]}')"
 
-          rm -f current_inject.txt current_index.txt inject_start_time.txt
+          rm -f state.json
+          git rm -f state.json || true
+          git commit -m "Reset state after finishing $FILE" || true
+          git push origin main || true
 
-      - name: Save state for next run
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: inject-state
-          path: |
-            current_inject.txt
-            current_index.txt
-            inject_start_time.txt
-          retention-days: 2
