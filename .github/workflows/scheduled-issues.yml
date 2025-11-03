@@ -124,7 +124,7 @@ jobs:
 
           TITLE="🚨 Security Alert #${RAND} - ${TIMESTAMP}"
 
-          # Safe heredoc for multi-line BODY content
+          # safe body
           read -r -d '' BODY <<EOF
 **Inject $((INDEX+1)) from $FILE**
 
@@ -152,7 +152,6 @@ EOF
           NEXT=$((INDEX+1))
           echo "$NEXT" > current_index.txt
 
-          # commit index file so next run continues same inject
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add current_index.txt
@@ -160,31 +159,44 @@ EOF
           git push || true
 
       - name: Check if inject finished and post summary
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
         run: |
+          set -euo pipefail
+
           FILE="${{ steps.select.outputs.file }}"
           INDEX=$(cat current_index.txt)
           TOTAL=$(wc -l < "$FILE" | tr -d ' ')
+
           if [ "$INDEX" -ge "$TOTAL" ]; then
             END_TIME=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
             START_TIME=$(cat inject_start_time.txt)
-            DURATION=$(( $(date -d "$END_TIME" +%s) - $(date -d "$START_TIME" +%s) ))
-            DURATION_MIN=$((DURATION / 60))
+            # compute duration in minutes (fallback to 0 if date fails)
+            if date -d "$END_TIME" >/dev/null 2>&1 && date -d "$START_TIME" >/dev/null 2>&1; then
+              DURATION=$(( $(date -d "$END_TIME" +%s) - $(date -d "$START_TIME" +%s) ))
+              DURATION_MIN=$((DURATION / 60))
+            else
+              DURATION_MIN=0
+            fi
 
-            # Build summary body safely using heredoc
-            read -r -d '' BODY <<EOF
-### Completed Inject File: ${FILE}
+            # build a temp file with the summary body (safe, no fancy quotes)
+            SUMMARY_FILE="summary_body.txt"
+            {
+              echo "### Completed Inject File: ${FILE}"
+              echo
+              echo "**Start:** ${START_TIME}"
+              echo "**End:** ${END_TIME}"
+              echo "**Duration:** ${DURATION_MIN} minutes"
+              echo
+              echo "**All injects processed:**"
+              echo
+              while IFS= read -r line; do
+                echo "- ${line}"
+              done < "$FILE"
+            } > "$SUMMARY_FILE"
 
-**Start:** ${START_TIME}
-**End:** ${END_TIME}
-**Duration:** ${DURATION_MIN} minutes
-
-**All injects processed:**
-EOF
-
-            while IFS= read -r line; do
-              BODY+=$'\n'"- ${line}"
-            done < "$FILE"
-
+            BODY=$(cat "$SUMMARY_FILE")
             TITLE="✅ Summary - ${FILE} completed"
 
             curl -s -X POST \
@@ -193,7 +205,6 @@ EOF
               "https://api.github.com/repos/${REPO}/issues" \
               -d "$(jq -nc --arg t "$TITLE" --arg b "$BODY" '{title:$t, body:$b, labels:["Tabletop","Summary"]}')"
 
-            # cleanup files so next run picks new random inject
-            rm -f current_index.txt current_inject.txt inject_start_time.txt
+            # cleanup so next run picks new random inject
+            rm -f current_index.txt current_inject.txt inject_start_time.txt "$SUMMARY_FILE"
           fi
-
