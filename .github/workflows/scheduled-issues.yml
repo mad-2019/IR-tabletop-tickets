@@ -14,6 +14,15 @@ on:
           - "true"
         default: "false"
 
+      run_mode:
+        description: "Choose how to run the injects (scheduled is not always reliable on free accounts)"
+        required: false
+        type: choice
+        options:
+          - "scheduled"
+          - "manual"
+        default: "scheduled"
+
 permissions:
   contents: write
   issues: write
