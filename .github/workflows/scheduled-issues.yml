@@ -10,7 +10,7 @@ on:
         required: true
         type: choice
         options: ["false","true"]
-        default: "true"
+        default: "false"
 
 permissions:
   contents: write
@@ -79,7 +79,7 @@ jobs:
           LINE=$(sed -n "$((INDEX+1))p" "$FILE")
 
           # Extract first 10 words for the title
-          SHORT_TITLE=$(echo "$LINE" | awk '{for(i=1;i<=6 && i<=NF;i++) printf "%s ", $i; if (NF>10) printf "..."}')
+          SHORT_TITLE=$(echo "$LINE" | awk '{for(i=1;i<=10 && i<=NF;i++) printf "%s ", $i; if (NF>10) printf "..."}')
 
           USERS=("A.Arkin" "B.Pitt" "C.Theron" "D.Washington" "E.Wood")
           HOSTS=("BDP-SRV01" "TMX-LAP03" "ADS-MAIL02")
@@ -124,6 +124,25 @@ jobs:
             exit 0
           fi
 
+          # Determine start and end times for duration calculation
+          if git log --format=%H -- "$FILE" >/dev/null 2>&1; then
+            START_TIME=$(git log --grep="Picked new exercise: $FILE" --format=%ci -1 || true)
+          fi
+          # Fallback: use first commit timestamp of state.json for this file
+          if [ -z "${START_TIME:-}" ]; then
+            START_TIME=$(git log --format=%ci -- state.json | tail -1)
+          fi
+          END_TIME=$(date -u +"%Y-%m-%d %H:%M:%S UTC")
+
+          # Calculate duration in minutes (approx)
+          START_EPOCH=$(date -d "$START_TIME" +%s 2>/dev/null || echo 0)
+          END_EPOCH=$(date -d "$END_TIME" +%s 2>/dev/null || echo 0)
+          if [ "$START_EPOCH" -gt 0 ] && [ "$END_EPOCH" -gt 0 ]; then
+            DURATION_MIN=$(( (END_EPOCH - START_EPOCH) / 60 ))
+          else
+            DURATION_MIN="N/A"
+          fi
+
           # Build summary with proper newlines
           {
             echo "### Completed Exercise File: $FILE"
@@ -133,6 +152,8 @@ jobs:
             while IFS= read -r line; do
               echo "- ${line}"
             done < "$FILE"
+            echo
+            echo "**Duration:** $DURATION_MIN minutes (from first to last inject)"
           } > summary.txt
 
           TITLE="Summary - $FILE completed"
