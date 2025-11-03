@@ -79,7 +79,7 @@ jobs:
           LINE=$(sed -n "$((INDEX+1))p" "$FILE")
 
           # Extract first 10 words for the title
-          SHORT_TITLE=$(echo "$LINE" | awk '{for(i=1;i<=10 && i<=NF;i++) printf "%s ", $i; if (NF>10) printf "..."}')
+          SHORT_TITLE=$(echo "$LINE" | awk '{for(i=1;i<=6 && i<=NF;i++) printf "%s ", $i; if (NF>10) printf "..."}')
 
           USERS=("A.Arkin" "B.Pitt" "C.Theron" "D.Washington" "E.Wood")
           HOSTS=("BDP-SRV01" "TMX-LAP03" "ADS-MAIL02")
@@ -135,7 +135,7 @@ jobs:
             done < "$FILE"
           } > summary.txt
 
-          TITLE="✅ Summary - $FILE completed"
+          TITLE="Summary - $FILE completed"
           BODY=$(cat summary.txt)
 
           curl -s -X POST \
