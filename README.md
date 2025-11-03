@@ -2,12 +2,12 @@
 
 This repository automatically simulates incident injects for tabletop exercises.
 
-Each inject is read line-by-line from random files (inject-1.txt, inject-2.txt, …) and posted as GitHub Issues.
+Each inject is read line-by-line from random files (exercise-1.txt, exercise-2.txt, …) and posted as GitHub Issues.
 
 ## How it works
 1. **Inject source files:**
 
-- Place one or more files named inject-X.txt in the repository root.
+- Place one or more files named exercise-X.txt in the repository root.
 
 - Each line = one inject.
 
@@ -26,7 +26,7 @@ Each inject is read line-by-line from random files (inject-1.txt, inject-2.txt, 
 
 - Example content:
 
-  - `{"current_inject": "inject-3.txt", "index": 2}`
+  - `{"current_inject": "exercise-2.txt", "index": 2}`
 - _Note: This file is committed automatically after each run_
 
 ## Running the workflow
@@ -52,7 +52,7 @@ If something goes wrong or you want to restart from scratch:
 
 - Each inject line appears as a new GitHub Issue titled like:
 
-  - `🚨 [inject-3.txt] Line 4 - 2025-11-03 11:20:33 UTC`
+  - `🚨 [exercise-3.txt] Malicious sign-in from external unknown - 2025-11-03 11:20:33 UTC`
 
 - Includes randomized user/host/IP metadata to simulate an alert.
 
