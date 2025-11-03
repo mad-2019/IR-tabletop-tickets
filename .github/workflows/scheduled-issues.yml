@@ -15,7 +15,7 @@ on:
         default: "false"
 
       run_mode:
-        description: "Choose how to run the injects (scheduled is not always reliable on free accounts)"
+        description: "Choose how to run the injects"
         required: false
         type: choice
         options:
