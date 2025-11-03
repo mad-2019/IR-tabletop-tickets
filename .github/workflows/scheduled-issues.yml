@@ -1,4 +1,4 @@
-name: Tabletop Incident Injects
+name: Tabletop Exercise Injects
 
 on:
   schedule:
@@ -6,11 +6,11 @@ on:
   workflow_dispatch:
     inputs:
       reset:
-        description: "Start a new random inject? (true = new, false = continue)"
+        description: "Start a new random exercise? (true = new, false = continue)"
         required: true
         type: choice
         options: ["false","true"]
-        default: "false"
+        default: "true"
 
 permissions:
   contents: write
@@ -31,7 +31,7 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git pull --rebase origin main || true
 
-      - name: Select or continue inject file
+      - name: Select or continue exercise file
         id: select
         run: |
           set -euo pipefail
@@ -39,36 +39,36 @@ jobs:
           STATE_FILE="state.json"
 
           shopt -s nullglob
-          files=(inject-*.txt)
+          files=(exercise-*.txt)
           if [ ${#files[@]} -eq 0 ]; then
-            echo "No inject-*.txt files found." >&2
+            echo "No exercise-*.txt files found." >&2
             exit 1
           fi
 
           if [ "$RESET" = "true" ] || [ ! -f "$STATE_FILE" ]; then
             RANDOM_FILE=${files[RANDOM % ${#files[@]}]}
             INDEX=0
-            echo "{\"current_inject\":\"${RANDOM_FILE}\",\"index\":${INDEX}}" > "$STATE_FILE"
-            echo "Picked new inject: $RANDOM_FILE"
+            echo "{\"current_exercise\":\"${RANDOM_FILE}\",\"index\":${INDEX}}" > "$STATE_FILE"
+            echo "Picked new exercise: $RANDOM_FILE"
           else
-            FILE=$(jq -r .current_inject "$STATE_FILE")
+            FILE=$(jq -r .current_exercise "$STATE_FILE")
             INDEX=$(jq -r .index "$STATE_FILE")
             TOTAL=$(wc -l < "$FILE" | tr -d ' ')
             if [ "$INDEX" -ge "$TOTAL" ]; then
               RANDOM_FILE=${files[RANDOM % ${#files[@]}]}
               INDEX=0
-              echo "{\"current_inject\":\"${RANDOM_FILE}\",\"index\":${INDEX}}" > "$STATE_FILE"
-              echo "Previous inject completed, picked new: $RANDOM_FILE"
+              echo "{\"current_exercise\":\"${RANDOM_FILE}\",\"index\":${INDEX}}" > "$STATE_FILE"
+              echo "Previous exercise completed, picked new: $RANDOM_FILE"
             fi
           fi
 
-          FILE=$(jq -r .current_inject "$STATE_FILE")
+          FILE=$(jq -r .current_exercise "$STATE_FILE")
           INDEX=$(jq -r .index "$STATE_FILE")
 
           echo "file=$FILE" >> $GITHUB_OUTPUT
           echo "index=$INDEX" >> $GITHUB_OUTPUT
 
-      - name: Post inject issue
+      - name: Post exercise line as issue
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -77,6 +77,9 @@ jobs:
           FILE="${{ steps.select.outputs.file }}"
           INDEX="${{ steps.select.outputs.index }}"
           LINE=$(sed -n "$((INDEX+1))p" "$FILE")
+
+          # Extract first 10 words for the title
+          SHORT_TITLE=$(echo "$LINE" | awk '{for(i=1;i<=10 && i<=NF;i++) printf "%s ", $i; if (NF>10) printf "..."}')
 
           USERS=("A.Arkin" "B.Pitt" "C.Theron" "D.Washington" "E.Wood")
           HOSTS=("BDP-SRV01" "TMX-LAP03" "ADS-MAIL02")
@@ -87,8 +90,8 @@ jobs:
           IP=${IPS[$RANDOM % ${#IPS[@]}]}
           TIMESTAMP=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
 
-          TITLE="🚨 [${FILE}] Line $((INDEX+1)) - $TIMESTAMP"
-          BODY=$(printf "**Inject %s from %s**\n\n%s\n\n**User:** %s\n**Host:** %s\n**IP:** %s\n" \
+          TITLE="🚨 [${FILE}] ${SHORT_TITLE} - $TIMESTAMP"
+          BODY=$(printf "**Exercise line %s from %s**\n\n%s\n\n**User:** %s\n**Host:** %s\n**IP:** %s\n" \
             "$((INDEX+1))" "$FILE" "$LINE" "$USER" "$HOST" "$IP")
 
           curl -s -X POST \
@@ -108,12 +111,12 @@ jobs:
           git commit -m "Advance index to $NEXT for $FILE" || true
           git push origin main || true
 
-      - name: Check if inject finished and post summary
+      - name: Check if exercise finished and post summary
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
-          FILE=$(jq -r .current_inject state.json)
+          FILE=$(jq -r .current_exercise state.json)
           INDEX=$(jq -r .index state.json)
           TOTAL=$(wc -l < "$FILE" | tr -d ' ')
           if [ "$INDEX" -lt "$TOTAL" ]; then
@@ -121,17 +124,25 @@ jobs:
             exit 0
           fi
 
-          SUMMARY="### Completed Inject File: $FILE\n\n**All injects processed:**\n"
-          while IFS= read -r line; do
-            SUMMARY="${SUMMARY}\n- ${line}"
-          done < "$FILE"
+          # Build summary with proper newlines
+          {
+            echo "### Completed Exercise File: $FILE"
+            echo
+            echo "**All lines processed:**"
+            echo
+            while IFS= read -r line; do
+              echo "- ${line}"
+            done < "$FILE"
+          } > summary.txt
 
-          TITLE="Summary - $FILE completed"
+          TITLE="✅ Summary - $FILE completed"
+          BODY=$(cat summary.txt)
+
           curl -s -X POST \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
             -H "Accept: application/vnd.github+json" \
             "https://api.github.com/repos/${REPO}/issues" \
-            -d "$(jq -nc --arg t "$TITLE" --arg b "$SUMMARY" '{title:$t, body:$b, labels:["Tabletop","Summary"]}')"
+            -d "$(jq -nc --arg t "$TITLE" --arg b "$BODY" '{title:$t, body:$b, labels:["Tabletop","Summary"]}')"
 
           rm -f state.json
           git rm -f state.json || true
