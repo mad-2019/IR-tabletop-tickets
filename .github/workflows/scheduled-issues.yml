@@ -28,14 +28,6 @@ jobs:
 
       # -------------------------------------------------------------
       # COMMENTED OUT run_mode input as per request
-      # run_mode:
-      #   description: "Choose how to run the injects"
-      #   required: false
-      #   type: choice
-      #   options:
-      #     - "scheduled"
-      #     - "manual"
-      #   default: "scheduled"
       # -------------------------------------------------------------
 
       - name: Select or continue inject file
@@ -46,7 +38,6 @@ jobs:
           RESET="${{ github.event.inputs.reset }}"
           echo "reset=$RESET"
 
-          # collect all inject-X.txt files
           shopt -s nullglob
           files=(inject-*.txt)
           if [ ${#files[@]} -eq 0 ]; then
@@ -57,10 +48,8 @@ jobs:
           CUR_INJECT_FILE="current_inject.txt"
           CUR_INDEX_FILE="current_index.txt"
           START_TIME_FILE="inject_start_time.txt"
-
           PICK_NEW=false
 
-          # decide if we need a new inject
           if [ "${RESET}" = "true" ]; then
             PICK_NEW=true
             echo "Manual reset requested"
@@ -74,12 +63,10 @@ jobs:
               PICK_NEW=true
               echo "Previous inject finished -> pick new"
             else
-              PICK_NEW=false
               echo "Continuing with existing inject: $(cat $CUR_INJECT_FILE) line $INDEX"
             fi
           fi
 
-          # pick a random inject if needed
           if [ "$PICK_NEW" = true ]; then
             RANDOM_FILE=${files[RANDOM % ${#files[@]}]}
             echo "$RANDOM_FILE" > "$CUR_INJECT_FILE"
@@ -98,7 +85,6 @@ jobs:
         run: |
           FILE="${{ steps.select.outputs.file }}"
           INDEX="${{ steps.select.outputs.index }}"
-
           LINE=$(sed -n "$((INDEX+1))p" "$FILE")
           echo "line=$LINE" >> $GITHUB_OUTPUT
 
@@ -121,23 +107,10 @@ jobs:
           IP=${IPS[$RANDOM % ${#IPS[@]}]}
           TIMESTAMP=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
           RAND=$((RANDOM % 10000))
-
           TITLE="🚨 Security Alert #${RAND} - ${TIMESTAMP}"
 
-          # safe body
-          read -r -d '' BODY <<EOF
-**Inject $((INDEX+1)) from $FILE**
-
-${INJECT}
-
-**Detected by:** SOC Monitoring
-**User:** ${USER}
-**Host:** ${HOST}
-**Source IP:** ${IP}
-**Timestamp:** ${TIMESTAMP}
-
-_Please triage and respond following IR playbook._
-EOF
+          BODY=$(printf "**Inject %s from %s**\n\n%s\n\n**Detected by:** SOC Monitoring\n**User:** %s\n**Host:** %s\n**Source IP:** %s\n**Timestamp:** %s\n\n_Please triage and respond following IR playbook._" \
+            "$((INDEX+1))" "$FILE" "$INJECT" "$USER" "$HOST" "$IP" "$TIMESTAMP")
 
           curl -s -X POST \
             -H "Authorization: Bearer $GITHUB_TOKEN" \
@@ -172,7 +145,6 @@ EOF
           if [ "$INDEX" -ge "$TOTAL" ]; then
             END_TIME=$(date -u +'%Y-%m-%d %H:%M:%S UTC')
             START_TIME=$(cat inject_start_time.txt)
-            # compute duration in minutes (fallback to 0 if date fails)
             if date -d "$END_TIME" >/dev/null 2>&1 && date -d "$START_TIME" >/dev/null 2>&1; then
               DURATION=$(( $(date -d "$END_TIME" +%s) - $(date -d "$START_TIME" +%s) ))
               DURATION_MIN=$((DURATION / 60))
@@ -180,24 +152,14 @@ EOF
               DURATION_MIN=0
             fi
 
-            # build a temp file with the summary body (safe, no fancy quotes)
-            SUMMARY_FILE="summary_body.txt"
-            {
-              echo "### Completed Inject File: ${FILE}"
-              echo
-              echo "**Start:** ${START_TIME}"
-              echo "**End:** ${END_TIME}"
-              echo "**Duration:** ${DURATION_MIN} minutes"
-              echo
-              echo "**All injects processed:**"
-              echo
-              while IFS= read -r line; do
-                echo "- ${line}"
-              done < "$FILE"
-            } > "$SUMMARY_FILE"
+            BODY=$(printf "### Completed Inject File: %s\n\n**Start:** %s\n**End:** %s\n**Duration:** %s minutes\n\n**All injects processed:**\n" \
+              "$FILE" "$START_TIME" "$END_TIME" "$DURATION_MIN")
 
-            BODY=$(cat "$SUMMARY_FILE")
-            TITLE="✅ Summary - ${FILE} completed"
+            while IFS= read -r line; do
+              BODY="${BODY}\n- ${line}"
+            done < "$FILE"
+
+            TITLE="Summary - ${FILE} completed"
 
             curl -s -X POST \
               -H "Authorization: Bearer $GITHUB_TOKEN" \
@@ -205,6 +167,5 @@ EOF
               "https://api.github.com/repos/${REPO}/issues" \
               -d "$(jq -nc --arg t "$TITLE" --arg b "$BODY" '{title:$t, body:$b, labels:["Tabletop","Summary"]}')"
 
-            # cleanup so next run picks new random inject
-            rm -f current_index.txt current_inject.txt inject_start_time.txt "$SUMMARY_FILE"
+            rm -f current_index.txt current_inject.txt inject_start_time.txt
           fi
