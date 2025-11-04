@@ -12,8 +12,10 @@ on:
         options: ["false","true"]
         default: "false"
       exercise_file:
-        description: "Optional: specify exact exercise file (e.g., exercise-4.txt)"
+        description: "Select an exercise file (or leave blank for random)"
         required: false
+        type: choice
+        options: ["", "exercise-1.txt", "exercise-2.txt", "exercise-3.txt", "exercise-4.txt (Recovery)", "exercise-5.txt"]
         default: ""
 
 permissions:
