@@ -11,6 +11,10 @@ on:
         type: choice
         options: ["false","true"]
         default: "false"
+      exercise_file:
+        description: "Optional: specify exact exercise file (e.g., exercise-4.txt)"
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -46,7 +50,15 @@ jobs:
           fi
 
           if [ "$RESET" = "true" ] || [ ! -f "$STATE_FILE" ]; then
-            RANDOM_FILE=${files[RANDOM % ${#files[@]}]}
+            USER_FILE="${{ github.event.inputs.exercise_file }}"
+            if [ -n "$USER_FILE" ] && [ -f "$USER_FILE" ]; then
+              RANDOM_FILE="$USER_FILE"
+              echo "User-selected exercise: $RANDOM_FILE"
+            else
+              RANDOM_FILE=${files[RANDOM % ${#files[@]}]}
+              echo "Picked random exercise: $RANDOM_FILE"
+            fi
+
             INDEX=0
             echo "{\"current_exercise\":\"${RANDOM_FILE}\",\"index\":${INDEX},\"start_time\":\"$(date -u +'%Y-%m-%d %H:%M:%S UTC')\"}" > "$STATE_FILE"
             echo "Picked new exercise: $RANDOM_FILE"
@@ -55,10 +67,16 @@ jobs:
             INDEX=$(jq -r .index "$STATE_FILE")
             TOTAL=$(wc -l < "$FILE" | tr -d ' ')
             if [ "$INDEX" -ge "$TOTAL" ]; then
-              RANDOM_FILE=${files[RANDOM % ${#files[@]}]}
+              USER_FILE="${{ github.event.inputs.exercise_file }}"
+              if [ -n "$USER_FILE" ] && [ -f "$USER_FILE" ]; then
+                RANDOM_FILE="$USER_FILE"
+                echo "User-selected new exercise after completion: $RANDOM_FILE"
+              else
+                RANDOM_FILE=${files[RANDOM % ${#files[@]}]}
+                echo "Previous exercise completed, picked new random: $RANDOM_FILE"
+              fi
               INDEX=0
               echo "{\"current_exercise\":\"${RANDOM_FILE}\",\"index\":${INDEX},\"start_time\":\"$(date -u +'%Y-%m-%d %H:%M:%S UTC')\"}" > "$STATE_FILE"
-              echo "Previous exercise completed, picked new: $RANDOM_FILE"
             fi
           fi
 
