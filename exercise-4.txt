@@ -1,7 +1,5 @@
-Test 4, line 1 blablaba bla bla bla
-Test 4, line 2 blablaba bla bla bla
-Test 4, line 3 blablaba bla bla bla
-Test 4, line 4 blablaba bla bla bla
-Test 4, line 5 blablaba bla bla bla
-Test 4, line 6 blablaba bla bla bla
-Test 4, line 7 blablaba bla bla bla
+Following successful containment of a malware infection, multiple servers were isolated for reimaging or system restoration. The organization must now validate that clean images are used, confirm systems are hardened and patched, and verify restoration integrity before declaring full recovery.
+IT Operations provides re-imaging plan for 5 servers using standard Windows 2022 image (last updated 90 days ago)
+Forensic team notes malware persistence in previous image version registry key (HKLM\Run).
+One restored server shows outbound DNS queries to suspicious domain similar to prior IOC.
+System owner requests urgent business restoration before patching or validation is complete.
