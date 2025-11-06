@@ -1,7 +1,6 @@
-Test 5, line 1 blablaba bla bla bla
-Test 5, line 2 blablaba bla bla bla
-Test 5, line 3 blablaba bla bla bla
-Test 5, line 4 blablaba bla bla bla
-Test 5, line 5 blablaba bla bla bla
-Test 5, line 6 blablaba bla bla bla
-Test 5, line 7 blablaba bla bla bla
+WAF alert: High-volume suspicious POSTs to /checkout/process with form-field tampering
+Customer report: Multiple customers complain of fraudulent card charges after using portal; example card holder Marta Ruiz. Source IP observed in logs:
+EDR detection: Admin workstation ADM-PORT-01 shows a new downloader process fetching http://198.51.100.200/sk — unusual parent chrome.exe
+DB telemetry: Large SELECTs from payments.transactions outside business hours, to IP below (internal relay), executed by DB user
+Network: Outbound POSTs with encoded payloads to 45.76.21.88 (suspected skimmer exfil) from webserver
+Support ticket: Customer provides screenshot of checkout page with extra hidden iframe and form.action changed; reported by Carlos Vega
