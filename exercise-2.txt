@@ -1,7 +1,6 @@
-Test 2, line 1 blablaba bla bla bla
-Test 2, line 2 blablaba bla bla bla
-Test 2, line 3 blablaba bla bla bla
-Test 2, line 4 blablaba bla bla bla
-Test 2, line 5 blablaba bla bla bla
-Test 2, line 6 blablaba bla bla bla
-Test 2, line 7 blablaba bla bla bla
+External users report that the company’s payment and customer portals are suddenly unavailable; internal monitoring shows multiple servers unresponsive.
+IT discovers ransom notes on several servers — critical systems appear encrypted, and access to backups is lost.
+In panic, the Head of IT orders all servers powered off remotely; connectivity is lost mid-process, requiring on-site shutdown at the data centre.
+Incident Response engagement initiated with an external team (CrowdStrike); preliminary findings confirm widespread ransomware encryption and deleted backups.
+FBI and legal teams are notified as negotiations begin with the attackers demanding USD 2 million; data leak monitoring on dark web initiated.
+Recovery operations span 21 days — partial decryption achieved, core infrastructure rebuilt and hardened, and EDR deployed across all restored systems.
